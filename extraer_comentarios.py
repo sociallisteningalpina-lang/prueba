@@ -19,7 +19,7 @@ SOLO_PRIMER_POST = False
 
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
-    "http://instagram.com/p/DQcdoNmAF9E/#advertiser"
+    "instagram.com/p/DQcdoNmAF9E/#advertiser"
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -360,18 +360,24 @@ def run_extraction():
     Función principal que ejecuta todo el proceso de extracción.
     Ahora con lógica de append en lugar de sobrescritura.
     """
+    logger.info("=" * 60)
     logger.info("--- STARTING COMMENT EXTRACTION PROCESS ---")
+    logger.info("=" * 60)
     
     if not APIFY_TOKEN:
         logger.error("APIFY_TOKEN not found in environment variables. Aborting.")
         return
 
     valid_urls = [url.strip() for url in URLS_A_PROCESAR if url.strip()]
+    logger.info(f"URLs to process: {len(valid_urls)}")
+    
     if not valid_urls:
         logger.warning("No valid URLs to process. Exiting.")
+        logger.warning("Please add URLs to the URLS_A_PROCESAR list.")
         return
 
     filename = "Comentarios Campaña.xlsx"
+    logger.info(f"Output file: {filename}")
     
     # --- NUEVA LÓGICA: Cargar comentarios existentes ---
     df_existing = load_existing_comments(filename)
@@ -417,12 +423,24 @@ def run_extraction():
 
     if not all_comments:
         logger.warning("No comments were extracted in this run.")
-        # Si ya hay comentarios existentes, mantenerlos
+        # Si ya hay comentarios existentes, mantenerlos y guardar el archivo
         if not df_existing.empty:
             logger.info(f"Keeping {len(df_existing)} existing comments in file.")
+            save_to_excel(df_existing, filename)
+            logger.info("--- EXTRACTION PROCESS FINISHED ---")
+            logger.info(f"Total comments in file: {len(df_existing)}")
             return
         else:
-            logger.info("No new or existing comments. Process finished.")
+            logger.info("No new or existing comments. Creating empty file for future use.")
+            # Crear un DataFrame vacío con las columnas correctas
+            empty_df = pd.DataFrame(columns=[
+                'post_number', 'platform', 'campaign_name', 'post_url', 
+                'author_name', 'comment_text', 'created_time_processed', 
+                'fecha_comentario', 'hora_comentario', 'likes_count', 
+                'replies_count', 'is_reply', 'author_url', 'created_time_raw'
+            ])
+            save_to_excel(empty_df, filename)
+            logger.info("Empty Excel file created. Process finished.")
             return
 
     logger.info("--- PROCESSING FINAL RESULTS ---")
@@ -454,10 +472,12 @@ def run_extraction():
     # Guardar archivo actualizado
     save_to_excel(df_combined, filename)
     
+    logger.info("=" * 60)
     logger.info("--- EXTRACTION PROCESS FINISHED ---")
     logger.info(f"Total comments in file: {len(df_combined)}")
+    logger.info(f"File saved: {filename}")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
     run_extraction()
-
