@@ -19,8 +19,11 @@ SOLO_PRIMER_POST = False
 
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
-    "instagram.com/p/DQcdoNmAF9E/#advertiser",
-    "https://www.facebook.com/100064867445065/posts/1260798862759017/?dco_ad_token=AaprzcNowYg9Z8x7VPPLTUDn0JLBBhvVLiYoWBNA4nuLlQiDP5dy-AXgevLL_V3gTKAoS5-zMd5T54oY&dco_ad_id=120234998089620781",
+    # INSTAGRAM
+    # ...    
+    # FACEBOOK - Demo/Ads
+    # ...
+    # ...
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -203,6 +206,49 @@ class SocialMediaScraper:
         return processed
 
 
+def create_post_registry_entry(url, platform, campaign_info):
+    """
+    Crea una entrada de registro para una pauta procesada sin comentarios.
+    Esto asegura que todas las pautas se registren en el Excel, 
+    incluso si no tienen comentarios en una ejecución específica.
+    """
+    return {
+        **campaign_info,
+        'post_url': url,
+        'post_number': None,  # Se asignará después
+        'platform': platform,
+        'author_name': None,
+        'author_url': None,
+        'comment_text': None,
+        'created_time': None,
+        'likes_count': 0,
+        'replies_count': 0,
+        'is_reply': False,
+        'parent_comment_id': None,
+        'created_time_raw': None
+    }
+
+
+def assign_consistent_post_numbers(df):
+    """
+    Asigna números de pauta consistentes basados en el orden de primera aparición.
+    Esto mantiene los post_numbers estables entre ejecuciones.
+    """
+    if df.empty:
+        return df
+    
+    # Obtener todas las URLs únicas en el orden en que aparecen
+    unique_urls = df['post_url'].dropna().unique()
+    
+    # Crear un mapeo de URL a post_number
+    url_to_number = {url: idx + 1 for idx, url in enumerate(unique_urls)}
+    
+    # Asignar post_numbers basados en el mapeo
+    df['post_number'] = df['post_url'].map(url_to_number)
+    
+    return df
+
+
 def load_existing_comments(filename):
     """
     Carga los comentarios existentes del archivo Excel.
@@ -230,8 +276,15 @@ def create_comment_id(row):
     - Texto del comentario
     - Fecha/hora (si está disponible)
     
+    Para entradas de registro (pautas sin comentarios), usa solo la URL.
     Esto permite identificar duplicados incluso cuando el texto es igual.
     """
+    # Caso especial: entrada de registro de pauta sin comentarios
+    if 'comment_text' in row.index and pd.isna(row['comment_text']):
+        # Para registros de pautas sin comentarios, usar solo la URL
+        post_url = str(row['post_url']) if 'post_url' in row.index and pd.notna(row['post_url']) else ''
+        return f"REGISTRY|{post_url}"
+    
     # Normalizar valores None/NaN - usar notación de corchetes para Series/DataFrame
     platform = str(row['platform']) if 'platform' in row.index and pd.notna(row['platform']) else ''
     platform = platform.strip().lower()
@@ -405,11 +458,20 @@ def run_extraction():
     # Extraer nuevos comentarios
     scraper = SocialMediaScraper(APIFY_TOKEN)
     all_comments = []
+    processed_urls_info = []  # Registro de todas las URLs procesadas
     post_counter = 0
 
     for url in valid_urls:
         post_counter += 1
         platform = scraper.detect_platform(url)
+        
+        # Registrar esta URL como procesada
+        processed_urls_info.append({
+            'url': url,
+            'platform': platform,
+            'temp_post_number': post_counter
+        })
+        
         comments = []
         
         if platform == 'facebook':
@@ -433,7 +495,14 @@ def run_extraction():
         else:
             logger.warning(f"Unknown platform for URL: {url}")
         
-        all_comments.extend(comments)
+        # Si no hay comentarios, crear entrada de registro
+        if not comments:
+            logger.info(f"No comments found for {url}. Creating registry entry.")
+            registry_entry = create_post_registry_entry(url, platform, CAMPAIGN_INFO)
+            registry_entry['post_number'] = post_counter
+            all_comments.append(registry_entry)
+        else:
+            all_comments.extend(comments)
         
         # Pausa aleatoria entre posts
         if not SOLO_PRIMER_POST and post_counter < len(valid_urls):
@@ -441,8 +510,10 @@ def run_extraction():
             logger.info(f"Pausing for {pausa_aleatoria:.2f} seconds to avoid detection...")
             time.sleep(pausa_aleatoria)
 
+    logger.info(f"Processed {len(valid_urls)} URLs with {len([c for c in all_comments if c.get('comment_text')])} actual comments")
+
     if not all_comments:
-        logger.warning("No comments were extracted in this run.")
+        logger.warning("No comments or URLs were processed in this run.")
         # Si ya hay comentarios existentes, mantenerlos y guardar el archivo
         if not df_existing.empty:
             logger.info(f"Keeping {len(df_existing)} existing comments in file.")
@@ -472,12 +543,22 @@ def run_extraction():
     # --- NUEVA LÓGICA: Merge con comentarios existentes ---
     df_combined = merge_comments(df_existing, df_new_comments)
     
-    # Ordenar por fecha de comentario (más recientes primero)
-    if 'created_time_processed' in df_combined.columns:
-        df_combined = df_combined.sort_values(
+    # --- IMPORTANTE: Reasignar post_numbers de forma consistente ---
+    # Esto asegura que cada URL única tenga siempre el mismo post_number
+    df_combined = assign_consistent_post_numbers(df_combined)
+    
+    # Ordenar por fecha de comentario (más recientes primero), pero manteniendo registros sin comentario al final
+    df_with_comments = df_combined[df_combined['comment_text'].notna()].copy()
+    df_without_comments = df_combined[df_combined['comment_text'].isna()].copy()
+    
+    if not df_with_comments.empty and 'created_time_processed' in df_with_comments.columns:
+        df_with_comments = df_with_comments.sort_values(
             'created_time_processed', 
             ascending=False
-        ).reset_index(drop=True)
+        )
+    
+    # Combinar: primero comentarios, luego registros de pautas sin comentarios
+    df_combined = pd.concat([df_with_comments, df_without_comments], ignore_index=True)
     
     # Organizar columnas
     final_columns = [
@@ -492,9 +573,16 @@ def run_extraction():
     # Guardar archivo actualizado
     save_to_excel(df_combined, filename)
     
+    # Calcular estadísticas finales
+    total_rows = len(df_combined)
+    total_comments = df_combined['comment_text'].notna().sum()
+    total_posts = df_combined['post_url'].nunique()
+    
     logger.info("=" * 60)
     logger.info("--- EXTRACTION PROCESS FINISHED ---")
-    logger.info(f"Total comments in file: {len(df_combined)}")
+    logger.info(f"Total unique posts/pautas tracked: {total_posts}")
+    logger.info(f"Total comments in file: {total_comments}")
+    logger.info(f"Total rows in file: {total_rows} (includes {total_rows - total_comments} post registry entries)")
     logger.info(f"File saved: {filename}")
     logger.info("=" * 60)
 
