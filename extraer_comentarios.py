@@ -739,6 +739,40 @@ def run_extraction():
     # --- NUEVA LÓGICA: Merge con comentarios existentes ---
     df_combined = merge_comments(df_existing, df_new_comments)
     
+    # --- LIMPIEZA CRÍTICA: Eliminar registry entries si ahora hay comentarios reales ---
+    logger.info("Checking for registry entries that now have real comments...")
+    
+    # Identificar qué filas son registry entries
+    is_registry_mask = df_combined.apply(is_registry_entry, axis=1)
+    
+    # Identificar URLs que tienen comentarios reales
+    urls_with_comments = set(
+        df_combined[~is_registry_mask]['post_url'].dropna().unique()
+    )
+    
+    if urls_with_comments:
+        # Filtrar registry entries: mantener solo las que NO tienen comentarios reales
+        registry_entries = df_combined[is_registry_mask].copy()
+        obsolete_registries = registry_entries[
+            registry_entries['post_url'].isin(urls_with_comments)
+        ]
+        
+        if not obsolete_registries.empty:
+            logger.info(f"  ✓ Found {len(obsolete_registries)} registry entries that now have real comments")
+            logger.info(f"    Removing obsolete registry entries...")
+            
+            # Eliminar registry entries obsoletas
+            df_combined = df_combined[
+                ~(is_registry_mask & df_combined['post_url'].isin(urls_with_comments))
+            ].copy()
+            
+            logger.info(f"  ✓ Removed {len(obsolete_registries)} obsolete registry entries")
+            logger.info(f"  ✓ These URLs now have real comments instead")
+        else:
+            logger.info(f"  ✓ No obsolete registry entries found")
+    else:
+        logger.info(f"  ✓ No comments in dataset, registry entries preserved")
+    
     # --- IMPORTANTE: Reasignar post_numbers de forma consistente ---
     # Esto asegura que cada URL única tenga siempre el mismo post_number
     df_combined = assign_consistent_post_numbers(df_combined)
@@ -813,4 +847,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
