@@ -20,7 +20,7 @@ SOLO_PRIMER_POST = False
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
     "instagram.com/p/DQcdoNmAF9E/#advertiser",
-    "https://www.facebook.com/100064867445065/posts/1260798862759017/?dco_ad_token=AaprzcNowYg9Z8x7VPPLTUDn0JLBBhvVLiYoWBNA4nuLlQiDP5dy-AXgevLL_V3gTKAoS5-zMd5T54oY&dco_ad_id=120234998089620781"
+    "https://www.facebook.com/100064867445065/posts/1260798862759017/?dco_ad_token=AaprzcNowYg9Z8x7VPPLTUDn0JLBBhvVLiYoWBNA4nuLlQiDP5dy-AXgevLL_V3gTKAoS5-zMd5T54oY&dco_ad_id=120234998089620781",
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -232,16 +232,21 @@ def create_comment_id(row):
     
     Esto permite identificar duplicados incluso cuando el texto es igual.
     """
-    # Normalizar valores None/NaN
-    platform = str(row.get('platform', '')).strip().lower()
-    author = str(row.get('author_name', '')).strip().lower()
-    text = str(row.get('comment_text', '')).strip().lower()
+    # Normalizar valores None/NaN - usar notación de corchetes para Series/DataFrame
+    platform = str(row['platform']) if 'platform' in row.index and pd.notna(row['platform']) else ''
+    platform = platform.strip().lower()
+    
+    author = str(row['author_name']) if 'author_name' in row.index and pd.notna(row['author_name']) else ''
+    author = author.strip().lower()
+    
+    text = str(row['comment_text']) if 'comment_text' in row.index and pd.notna(row['comment_text']) else ''
+    text = text.strip().lower()
     
     # Para la fecha, intentamos usar created_time_processed primero, luego created_time
     date_str = ''
-    if 'created_time_processed' in row and pd.notna(row['created_time_processed']):
+    if 'created_time_processed' in row.index and pd.notna(row['created_time_processed']):
         date_str = str(row['created_time_processed'])
-    elif 'created_time' in row and pd.notna(row['created_time']):
+    elif 'created_time' in row.index and pd.notna(row['created_time']):
         date_str = str(row['created_time'])
     
     # Crear un ID único concatenando los valores
@@ -268,12 +273,25 @@ def merge_comments(df_existing, df_new):
         logger.info("No new comments to add.")
         return df_existing
     
+    logger.info(f"Starting merge process...")
+    logger.info(f"  - Existing comments: {len(df_existing)}")
+    logger.info(f"  - New comments extracted: {len(df_new)}")
+    
     # Crear IDs únicos para ambos DataFrames
     logger.info("Creating unique identifiers for existing comments...")
     df_existing['_comment_id'] = df_existing.apply(create_comment_id, axis=1)
     
     logger.info("Creating unique identifiers for new comments...")
     df_new['_comment_id'] = df_new.apply(create_comment_id, axis=1)
+    
+    # Debug: Mostrar algunos ejemplos de IDs generados
+    logger.info(f"Sample existing IDs (first 3):")
+    for i, id_val in enumerate(df_existing['_comment_id'].head(3)):
+        logger.info(f"  {i+1}. {id_val}")
+    
+    logger.info(f"Sample new IDs (first 3):")
+    for i, id_val in enumerate(df_new['_comment_id'].head(3)):
+        logger.info(f"  {i+1}. {id_val}")
     
     # Identificar comentarios duplicados
     existing_ids = set(df_existing['_comment_id'])
@@ -282,8 +300,9 @@ def merge_comments(df_existing, df_new):
     duplicate_ids = existing_ids.intersection(new_ids)
     unique_new_ids = new_ids - existing_ids
     
-    logger.info(f"Found {len(duplicate_ids)} duplicate comments")
-    logger.info(f"Found {len(unique_new_ids)} new unique comments to add")
+    logger.info(f"Duplicate detection results:")
+    logger.info(f"  - Duplicates found: {len(duplicate_ids)}")
+    logger.info(f"  - Unique new comments: {len(unique_new_ids)}")
     
     # Filtrar solo comentarios nuevos
     df_truly_new = df_new[df_new['_comment_id'].isin(unique_new_ids)].copy()
@@ -294,7 +313,7 @@ def merge_comments(df_existing, df_new):
     # Eliminar la columna temporal de ID
     df_combined = df_combined.drop(columns=['_comment_id'])
     
-    logger.info(f"Total comments after merge: {len(df_combined)}")
+    logger.info(f"Merge complete. Total comments: {len(df_combined)}")
     return df_combined
 
 
@@ -482,4 +501,5 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
