@@ -21,7 +21,8 @@ SOLO_PRIMER_POST = False
 URLS_A_PROCESAR = [
     "https://www.facebook.com/reel/793063333529226",
     "https://www.instagram.com/p/DPpXWpHjMX2/",
-    "https://www.instagram.com/p/DPpVC6UjLlp/"
+    "https://www.instagram.com/p/DPpVC6UjLlp/",
+    "https://www.instagram.com/p/DPzKNF0DIqm/",
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -230,19 +231,52 @@ def create_post_registry_entry(url, platform, campaign_info):
 def assign_consistent_post_numbers(df):
     """
     Asigna números de pauta consistentes basados en el orden de primera aparición.
+    
+    IMPORTANTE: Preserva los post_numbers que ya existen en el DataFrame.
+    Solo asigna números nuevos a URLs que no tenían número previamente.
+    
     Esto mantiene los post_numbers estables entre ejecuciones.
     """
     if df.empty:
         return df
     
-    # Obtener todas las URLs únicas en el orden en que aparecen
-    unique_urls = df['post_url'].dropna().unique()
+    # Paso 1: Identificar URLs que YA tienen un post_number asignado
+    # Crear un mapeo de URL → post_number existente
+    df_with_numbers = df[df['post_number'].notna()].copy()
+    existing_mapping = {}
     
-    # Crear un mapeo de URL a post_number
-    url_to_number = {url: idx + 1 for idx, url in enumerate(unique_urls)}
+    if not df_with_numbers.empty:
+        # Para cada URL, obtener su post_number más común (en caso de inconsistencias)
+        for url in df_with_numbers['post_url'].unique():
+            if pd.notna(url):
+                # Obtener el post_number más frecuente para esta URL
+                url_numbers = df_with_numbers[df_with_numbers['post_url'] == url]['post_number']
+                most_common = url_numbers.mode()
+                if len(most_common) > 0:
+                    existing_mapping[url] = int(most_common.iloc[0])
     
-    # Asignar post_numbers basados en el mapeo
-    df['post_number'] = df['post_url'].map(url_to_number)
+    logger.info(f"Found {len(existing_mapping)} URLs with existing post_numbers")
+    
+    # Paso 2: Identificar URLs que NO tienen post_number
+    all_urls = df['post_url'].dropna().unique()
+    new_urls = [url for url in all_urls if url not in existing_mapping]
+    
+    logger.info(f"Found {len(new_urls)} URLs without post_numbers (will assign new numbers)")
+    
+    # Paso 3: Encontrar el siguiente número disponible
+    if existing_mapping:
+        next_number = max(existing_mapping.values()) + 1
+    else:
+        next_number = 1
+    
+    # Paso 4: Asignar números a URLs nuevas
+    for url in new_urls:
+        existing_mapping[url] = next_number
+        logger.info(f"Assigning post_number {next_number} to new URL: {url[:50]}...")
+        next_number += 1
+    
+    # Paso 5: Aplicar el mapeo completo al DataFrame
+    df['post_number'] = df['post_url'].map(existing_mapping)
     
     return df
 
