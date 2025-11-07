@@ -19,10 +19,11 @@ SOLO_PRIMER_POST = False
 
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
-    "https://www.facebook.com/reel/793063333529226",
-    "https://www.instagram.com/p/DPpXWpHjMX2/",
-    "https://www.instagram.com/p/DPpVC6UjLlp/",
-    "https://www.instagram.com/p/DPzKNF0DIqm/",
+    # INSTAGRAM
+    # ...    
+    # FACEBOOK - Demo/Ads
+    # ...
+    # ...
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -315,7 +316,8 @@ def create_comment_id(row):
     if 'comment_text' in row.index and pd.isna(row['comment_text']):
         # Para registros de pautas sin comentarios, usar solo la URL
         post_url = str(row['post_url']) if 'post_url' in row.index and pd.notna(row['post_url']) else ''
-        return f"REGISTRY|{post_url}"
+        unique_id = f"REGISTRY|{post_url}"
+        return unique_id
     
     # Normalizar valores None/NaN - usar notación de corchetes para Series/DataFrame
     platform = str(row['platform']) if 'platform' in row.index and pd.notna(row['platform']) else ''
@@ -359,24 +361,30 @@ def merge_comments(df_existing, df_new):
         return df_existing
     
     logger.info(f"Starting merge process...")
-    logger.info(f"  - Existing comments: {len(df_existing)}")
-    logger.info(f"  - New comments extracted: {len(df_new)}")
+    logger.info(f"  - Existing rows: {len(df_existing)}")
+    logger.info(f"    · With comments: {df_existing['comment_text'].notna().sum()}")
+    logger.info(f"    · Registry entries (no comments): {df_existing['comment_text'].isna().sum()}")
+    logger.info(f"  - New rows extracted: {len(df_new)}")
+    logger.info(f"    · With comments: {df_new['comment_text'].notna().sum()}")
+    logger.info(f"    · Registry entries (no comments): {df_new['comment_text'].isna().sum()}")
     
     # Crear IDs únicos para ambos DataFrames
-    logger.info("Creating unique identifiers for existing comments...")
+    logger.info("Creating unique identifiers for existing entries...")
     df_existing['_comment_id'] = df_existing.apply(create_comment_id, axis=1)
     
-    logger.info("Creating unique identifiers for new comments...")
+    logger.info("Creating unique identifiers for new entries...")
     df_new['_comment_id'] = df_new.apply(create_comment_id, axis=1)
     
     # Debug: Mostrar algunos ejemplos de IDs generados
-    logger.info(f"Sample existing IDs (first 3):")
-    for i, id_val in enumerate(df_existing['_comment_id'].head(3)):
-        logger.info(f"  {i+1}. {id_val}")
+    logger.info(f"Sample existing IDs (first 5):")
+    for i, (idx, row) in enumerate(df_existing.head(5).iterrows()):
+        comment_type = "COMMENT" if pd.notna(row['comment_text']) else "REGISTRY"
+        logger.info(f"  {i+1}. [{comment_type}] {row['_comment_id'][:100]}")
     
-    logger.info(f"Sample new IDs (first 3):")
-    for i, id_val in enumerate(df_new['_comment_id'].head(3)):
-        logger.info(f"  {i+1}. {id_val}")
+    logger.info(f"Sample new IDs (first 5):")
+    for i, (idx, row) in enumerate(df_new.head(5).iterrows()):
+        comment_type = "COMMENT" if pd.notna(row['comment_text']) else "REGISTRY"
+        logger.info(f"  {i+1}. [{comment_type}] {row['_comment_id'][:100]}")
     
     # Identificar comentarios duplicados
     existing_ids = set(df_existing['_comment_id'])
@@ -385,12 +393,25 @@ def merge_comments(df_existing, df_new):
     duplicate_ids = existing_ids.intersection(new_ids)
     unique_new_ids = new_ids - existing_ids
     
+    # Contar duplicados por tipo
+    duplicate_registry = sum(1 for id_val in duplicate_ids if id_val.startswith('REGISTRY|'))
+    duplicate_comments = len(duplicate_ids) - duplicate_registry
+    
     logger.info(f"Duplicate detection results:")
-    logger.info(f"  - Duplicates found: {len(duplicate_ids)}")
-    logger.info(f"  - Unique new comments: {len(unique_new_ids)}")
+    logger.info(f"  - Total duplicates found: {len(duplicate_ids)}")
+    logger.info(f"    · Duplicate registry entries: {duplicate_registry}")
+    logger.info(f"    · Duplicate comments: {duplicate_comments}")
+    logger.info(f"  - Unique new entries: {len(unique_new_ids)}")
+    
+    if duplicate_registry > 0:
+        logger.info(f"✓ Registry entries correctly detected as duplicates (will not be added again)")
     
     # Filtrar solo comentarios nuevos
     df_truly_new = df_new[df_new['_comment_id'].isin(unique_new_ids)].copy()
+    
+    logger.info(f"Adding {len(df_truly_new)} new unique entries:")
+    logger.info(f"  - New comments: {df_truly_new['comment_text'].notna().sum()}")
+    logger.info(f"  - New registry entries: {df_truly_new['comment_text'].isna().sum()}")
     
     # Combinar existentes con nuevos
     df_combined = pd.concat([df_existing, df_truly_new], ignore_index=True)
@@ -398,7 +419,7 @@ def merge_comments(df_existing, df_new):
     # Eliminar la columna temporal de ID
     df_combined = df_combined.drop(columns=['_comment_id'])
     
-    logger.info(f"Merge complete. Total comments: {len(df_combined)}")
+    logger.info(f"Merge complete. Total rows in combined DataFrame: {len(df_combined)}")
     return df_combined
 
 
@@ -621,7 +642,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
-
-
-
