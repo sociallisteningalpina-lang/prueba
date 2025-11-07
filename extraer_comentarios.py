@@ -19,11 +19,10 @@ SOLO_PRIMER_POST = False
 
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
-    # INSTAGRAM
-    # ...    
-    # FACEBOOK - Demo/Ads
-    # ...
-    # ...
+    "https://www.facebook.com/reel/793063333529226",
+    "https://www.instagram.com/p/DPpXWpHjMX2/",
+    "https://www.instagram.com/p/DPpVC6UjLlp/",
+    "https://www.instagram.com/p/DPzKNF0DIqm/",
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -642,3 +641,4 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
