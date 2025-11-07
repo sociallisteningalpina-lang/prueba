@@ -210,15 +210,17 @@ def create_post_registry_entry(url, platform, campaign_info):
     Crea una entrada de registro para una pauta procesada sin comentarios.
     Esto asegura que todas las pautas se registren en el Excel, 
     incluso si no tienen comentarios en una ejecución específica.
+    
+    IMPORTANTE: Normaliza la URL para garantizar comparaciones consistentes.
     """
     return {
         **campaign_info,
-        'post_url': url,
+        'post_url': normalize_url(url),  # URL normalizada
         'post_number': None,  # Se asignará después
         'platform': platform,
         'author_name': None,
         'author_url': None,
-        'comment_text': None,
+        'comment_text': None,  # Explícitamente None, no cadena vacía
         'created_time': None,
         'likes_count': 0,
         'replies_count': 0,
@@ -285,6 +287,11 @@ def load_existing_comments(filename):
     """
     Carga los comentarios existentes del archivo Excel.
     Retorna un DataFrame vacío si el archivo no existe.
+    
+    IMPORTANTE: 
+    - Normaliza cadenas vacías a NaN y normaliza URLs
+    - LIMPIA AUTOMÁTICAMENTE cualquier duplicado existente en el archivo
+    - Garantiza que el Excel siempre esté limpio sin scripts adicionales
     """
     if not Path(filename).exists():
         logger.info(f"No existing file found: {filename}. Will create new file.")
@@ -292,12 +299,118 @@ def load_existing_comments(filename):
     
     try:
         df_existing = pd.read_excel(filename, sheet_name='Comentarios')
-        logger.info(f"Loaded {len(df_existing)} existing comments from {filename}")
+        logger.info(f"Loaded {len(df_existing)} existing rows from {filename}")
+        original_count = len(df_existing)
+        
+        # PASO 1: Normalizar cadenas vacías a NaN
+        if 'comment_text' in df_existing.columns:
+            df_existing['comment_text'] = df_existing['comment_text'].replace('', pd.NA)
+            df_existing['comment_text'] = df_existing['comment_text'].apply(
+                lambda x: pd.NA if isinstance(x, str) and x.strip() == '' else x
+            )
+            df_existing['comment_text'] = df_existing['comment_text'].apply(
+                lambda x: pd.NA if isinstance(x, str) and x.lower() == 'nan' else x
+            )
+        
+        # PASO 2: Normalizar URLs
+        if 'post_url' in df_existing.columns:
+            df_existing['post_url'] = df_existing['post_url'].apply(normalize_url)
+        
+        # PASO 3: LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
+        logger.info("Checking for and removing any duplicate entries...")
+        
+        # Separar comentarios de registry entries
+        is_registry = df_existing.apply(is_registry_entry, axis=1)
+        comments_df = df_existing[~is_registry].copy()
+        registry_df = df_existing[is_registry].copy()
+        
+        # Limpiar duplicados en registry entries (mantener solo uno por URL)
+        if not registry_df.empty:
+            registry_df_clean = registry_df.drop_duplicates(subset=['post_url'], keep='first')
+            removed_registry = len(registry_df) - len(registry_df_clean)
+            if removed_registry > 0:
+                logger.info(f"  ✓ Removed {removed_registry} duplicate registry entries")
+        else:
+            registry_df_clean = registry_df
+        
+        # Limpiar duplicados en comentarios
+        if not comments_df.empty:
+            # Crear ID temporal para detectar duplicados
+            comments_df['_temp_id'] = comments_df.apply(create_comment_id, axis=1)
+            comments_df_clean = comments_df.drop_duplicates(subset=['_temp_id'], keep='first')
+            comments_df_clean = comments_df_clean.drop(columns=['_temp_id'])
+            
+            removed_comments = len(comments_df) - len(comments_df_clean)
+            if removed_comments > 0:
+                logger.info(f"  ✓ Removed {removed_comments} duplicate comments")
+        else:
+            comments_df_clean = comments_df
+        
+        # Recombinar
+        df_existing = pd.concat([comments_df_clean, registry_df_clean], ignore_index=True)
+        
+        total_removed = original_count - len(df_existing)
+        if total_removed > 0:
+            logger.info(f"  ✓ Total duplicates removed: {total_removed}")
+            logger.info(f"  ✓ Clean rows: {len(df_existing)}")
+        else:
+            logger.info(f"  ✓ No duplicates found. File is clean.")
+        
+        # Contar tipos de entradas
+        registry_count = sum(1 for idx, row in df_existing.iterrows() if is_registry_entry(row))
+        comment_count = len(df_existing) - registry_count
+        
+        logger.info(f"Final existing data: {comment_count} comments, {registry_count} registry entries")
+        
         return df_existing
     except Exception as e:
         logger.error(f"Error loading existing file: {e}")
         logger.info("Starting with empty DataFrame")
         return pd.DataFrame()
+
+
+def normalize_url(url):
+    """
+    Normaliza una URL para comparación consistente:
+    - Elimina espacios en blanco
+    - Convierte a minúsculas
+    - Elimina barra final
+    - Elimina parámetros de query (todo después de '?')
+    """
+    if pd.isna(url) or url == '':
+        return ''
+    
+    url = str(url).strip().lower()
+    
+    # Eliminar parámetros de query
+    if '?' in url:
+        url = url.split('?')[0]
+    
+    # Eliminar barra final
+    if url.endswith('/'):
+        url = url[:-1]
+    
+    return url
+
+
+def is_registry_entry(row):
+    """
+    Determina si una fila es una entrada de registro (pauta sin comentarios).
+    Considera tanto NaN como cadenas vacías.
+    """
+    if 'comment_text' not in row.index:
+        return True
+    
+    comment = row['comment_text']
+    
+    # Es registro si es NaN, None, o cadena vacía/solo espacios
+    if pd.isna(comment):
+        return True
+    
+    if isinstance(comment, str) and comment.strip() == '':
+        return True
+    
+    return False
 
 
 def create_comment_id(row):
@@ -308,14 +421,21 @@ def create_comment_id(row):
     - Texto del comentario
     - Fecha/hora (si está disponible)
     
-    Para entradas de registro (pautas sin comentarios), usa solo la URL.
+    Para entradas de registro (pautas sin comentarios), usa solo la URL NORMALIZADA.
     Esto permite identificar duplicados incluso cuando el texto es igual.
     """
     # Caso especial: entrada de registro de pauta sin comentarios
-    if 'comment_text' in row.index and pd.isna(row['comment_text']):
-        # Para registros de pautas sin comentarios, usar solo la URL
-        post_url = str(row['post_url']) if 'post_url' in row.index and pd.notna(row['post_url']) else ''
-        unique_id = f"REGISTRY|{post_url}"
+    if is_registry_entry(row):
+        # Para registros de pautas sin comentarios, usar solo la URL normalizada
+        post_url = row.get('post_url', '') if 'post_url' in row.index else ''
+        normalized_url = normalize_url(post_url)
+        
+        if not normalized_url:
+            # Si no hay URL, generar un ID basado en platform al menos
+            platform = str(row.get('platform', 'unknown')) if 'platform' in row.index else 'unknown'
+            return f"REGISTRY|NO_URL|{platform}"
+        
+        unique_id = f"REGISTRY|{normalized_url}"
         return unique_id
     
     # Normalizar valores None/NaN - usar notación de corchetes para Series/DataFrame
@@ -325,8 +445,13 @@ def create_comment_id(row):
     author = str(row['author_name']) if 'author_name' in row.index and pd.notna(row['author_name']) else ''
     author = author.strip().lower()
     
-    text = str(row['comment_text']) if 'comment_text' in row.index and pd.notna(row['comment_text']) else ''
-    text = text.strip().lower()
+    # Para el texto, normalizar Unicode y espacios
+    text = ''
+    if 'comment_text' in row.index and pd.notna(row['comment_text']):
+        text = str(row['comment_text']).strip().lower()
+        # Normalizar Unicode a NFC (forma canónica compuesta)
+        import unicodedata
+        text = unicodedata.normalize('NFC', text)
     
     # Para la fecha, intentamos usar created_time_processed primero, luego created_time
     date_str = ''
@@ -592,6 +717,25 @@ def run_extraction():
     df_new_comments = pd.DataFrame(all_comments)
     df_new_comments = process_datetime_columns(df_new_comments)
     
+    # CRÍTICO: Normalizar datos antes del merge
+    logger.info("Normalizing new data for consistent comparison...")
+    
+    # 1. Convertir cadenas vacías a NaN en comment_text
+    if 'comment_text' in df_new_comments.columns:
+        df_new_comments['comment_text'] = df_new_comments['comment_text'].replace('', pd.NA)
+        df_new_comments['comment_text'] = df_new_comments['comment_text'].apply(
+            lambda x: pd.NA if isinstance(x, str) and x.strip() == '' else x
+        )
+    
+    # 2. Normalizar URLs
+    if 'post_url' in df_new_comments.columns:
+        df_new_comments['post_url'] = df_new_comments['post_url'].apply(normalize_url)
+    
+    # Contar tipos en nuevos datos
+    new_registry = sum(1 for idx, row in df_new_comments.iterrows() if is_registry_entry(row))
+    new_comments = len(df_new_comments) - new_registry
+    logger.info(f"New data normalized: {new_comments} comments, {new_registry} registry entries")
+    
     # --- NUEVA LÓGICA: Merge con comentarios existentes ---
     df_combined = merge_comments(df_existing, df_new_comments)
     
@@ -611,6 +755,34 @@ def run_extraction():
     
     # Combinar: primero comentarios, luego registros de pautas sin comentarios
     df_combined = pd.concat([df_with_comments, df_without_comments], ignore_index=True)
+    
+    # --- LIMPIEZA FINAL: Asegurar que no haya duplicados antes de guardar ---
+    logger.info("Final deduplication check before saving...")
+    original_combined_count = len(df_combined)
+    
+    # Separar para limpiar
+    is_registry_final = df_combined.apply(is_registry_entry, axis=1)
+    comments_final = df_combined[~is_registry_final].copy()
+    registry_final = df_combined[is_registry_final].copy()
+    
+    # Limpiar duplicados finales en registry
+    if not registry_final.empty:
+        registry_final = registry_final.drop_duplicates(subset=['post_url'], keep='first')
+    
+    # Limpiar duplicados finales en comentarios
+    if not comments_final.empty:
+        comments_final['_temp_id'] = comments_final.apply(create_comment_id, axis=1)
+        comments_final = comments_final.drop_duplicates(subset=['_temp_id'], keep='first')
+        comments_final = comments_final.drop(columns=['_temp_id'])
+    
+    # Recombinar
+    df_combined = pd.concat([comments_final, registry_final], ignore_index=True)
+    
+    final_removed = original_combined_count - len(df_combined)
+    if final_removed > 0:
+        logger.info(f"  ✓ Removed {final_removed} final duplicates before saving")
+    else:
+        logger.info(f"  ✓ No duplicates found in final data")
     
     # Organizar columnas
     final_columns = [
