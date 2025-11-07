@@ -19,9 +19,9 @@ SOLO_PRIMER_POST = False
 
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
-    "https://www.instagram.com/p/DQsEHJkgCuw/#advertiser",
-    "https://www.facebook.com/100064867445065/posts/1260798862759017/?dco_ad_token=AaprzcNowYg9Z8x7VPPLTUDn0JLBBhvVLiYoWBNA4nuLlQiDP5dy-AXgevLL_V3gTKAoS5-zMd5T54oY&dco_ad_id=120234998089620781",
-    "https://www.instagram.com/p/DQcdoNmAF9E/#advertiser"
+    "https://www.facebook.com/reel/793063333529226",
+    "https://www.instagram.com/p/DPpXWpHjMX2/",
+    "https://www.instagram.com/p/DPpVC6UjLlp/"
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -587,6 +587,7 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
 
