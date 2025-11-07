@@ -6,7 +6,8 @@ import logging
 import html
 import unicodedata
 import os
-import random # <-- MODIFICACIÓN: Se importa la librería para generar números aleatorios
+import random
+from pathlib import Path
 
 # Configurar logging más limpio
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -19,66 +20,10 @@ SOLO_PRIMER_POST = False
 # LISTA DE URLs A PROCESAR
 URLS_A_PROCESAR = [
     # INSTAGRAM
-    "https://www.instagram.com/p/DOL-s8yAEpK/",
-    "https://www.instagram.com/p/DOL-vK2AEau/",
-    "https://www.instagram.com/p/DN8-4jkgPZ9/",
-    "https://www.instagram.com/p/DN8-jkkgLpv/",
-    "https://www.instagram.com/p/DOL-utugPsM/",
-    "https://www.instagram.com/p/DOL-s98gFfw/",
-    "https://www.instagram.com/p/DOL_ShzgF8e/",
-    "https://www.instagram.com/p/DOL-m7CgKdV/",
-    "https://www.instagram.com/p/DOL-mwPgJuw/",
-    "https://www.instagram.com/p/DOL-oBdgA01/",
-    "https://www.instagram.com/p/DOL-n6OAOXo/",
-    "https://www.instagram.com/p/DOL-m3ngF3N/",
-    "https://www.instagram.com/p/DOL-ms9APs0/",
-    
+    # ...    
     # FACEBOOK - Demo/Ads
-    "https://www.facebook.com/?feed_demo_ad=120233418145910432&h=AQCP9RxlmBjXz0LtaJAh",
-    "https://www.facebook.com/?feed_demo_ad=120233417504070432&h=AQAQCH3Rl_lce0gF0_4",
-    "https://www.facebook.com/?feed_demo_ad=120233417168840432&h=AQA4sGqS4BetjNxbaVU",
-    "https://www.facebook.com/?feed_demo_ad=120233417074240432&h=AQB06AurVyvI00lu8K4",
-    "https://www.facebook.com/?feed_demo_ad=120233054832200432&h=AQDDns3pft0Vh4Z-2iA",
-    "https://www.facebook.com/?feed_demo_ad=120233063358500432&h=AQB2gbbCcn_X0UX-hOI",
-    "https://www.facebook.com/?feed_demo_ad=120233055819280432&h=AQBgqCgBPhgHaSvBmjQ",
-    "https://www.facebook.com/?feed_demo_ad=120233418582750432&h=AQA3C-BhfkEDKjRWGuc",
-    "https://www.facebook.com/?feed_demo_ad=120233555370800432&h=AQBWtXEcnrVRvvpNVEk",
-    "https://www.facebook.com/?feed_demo_ad=120233418238300432&h=AQCshb4xg4w3aZQNhso",
-    "https://www.facebook.com/?feed_demo_ad=120233554870910432&h=AQBbgdd3MGvw9q6WCwY",
-    "https://www.facebook.com/?feed_demo_ad=120233417504070432&h=AQAQCH3Rl_lce0gF7k0",
-    "https://www.facebook.com/?feed_demo_ad=120233418145910432&h=AQCP9RxlmBjXz0LtaJA",
-    
-    # FACEBOOK - Posts
-    "https://www.facebook.com/100064867445065/posts/pfbid02tU1gU4dpz5E4hdSJQbQfHHRWQeebhrGLvGDdRwCfEENUfiJM7LBKg2ZXL8xjh6Qdl?dco_ad_id=120233418145910432",
-    "https://www.facebook.com/100064867445065/posts/pfbid09ESTvbRgHFXPvPnzu5Wuxc17mLHGzbvh3PXviVmWXTC63LtA7fwKWhoAmnoPCGLKl?dco_ad_id=120233417504070432",
-    "https://www.facebook.com/100064867445065/posts/pfbid0vhyQ3E2hLKNx7xAhucBeXJMXJQRevYeXPBqbjv8aLadNxYp5XSnYdasEHXTmTf4gl?dco_ad_id=120233417168840432",
-    "https://www.facebook.com/100064867445065/posts/pfbid02M6noi2G6CkPLtfRGQEzZw48B7i2pGmk2KrDTUixNn4inUUrxG47VFVVtsgjsVpGXl?dco_ad_id=120233417074240432",
-    "https://www.facebook.com/100064867445065/posts/pfbid04uas4JSTf7CfNJ7vygqn7LEq2kaRS43o2TgqHWuttDDG6A6DnrCLjtP2MFScAZwbl?dco_ad_id=120233054832200432",
-    "https://www.facebook.com/100064867445065/posts/pfbid0neLQsQFk4CkV8yBRRzcXEdBtA91Wt3C6RrHFz4QaUZevWDh1SzqUPCcWHiN31f3xl?dco_ad_id=120233063358500432",
-    "https://www.facebook.com/100064867445065/posts/pfbid0KRNkHEJBgq8mga9zMUZCcxGF44ZFTkDCR79aecj6UMVc1guCGFs1nxvxVMecBu8hl?dco_ad_id=120233055819280432",
-    "https://www.facebook.com/100064867445065/posts/pfbid02DMBD3zQxW4n6oSVNcbBR4CQZvuFtDVvrQTo7qBkFDnUXcCNzxzDK79rAk68C3kv5l?dco_ad_id=120233417504070432",
-    
-    # FACEBOOK - Videos
-    "https://www.facebook.com/100064867445065/videos/759074660165987",
-    "https://www.facebook.com/100064867445065/videos/646994368025589",
-    "https://www.facebook.com/100064867445065/videos/1448503073025625",
-    "https://www.facebook.com/100064867445065/videos/2033891010750740",
-    "https://www.facebook.com/100064867445065/videos/1522847888884919",
-    "https://www.facebook.com/100064867445065/videos/830303536353287",
-    
-    # TIKTOK
-    "https://www.tiktok.com/@alpinacol/video/7542657663943838983?_r=1&_t=ZS-8zoRtzUAc5A",
-    "https://www.tiktok.com/@alpinacol/video/7541457975207136530?_r=1&_t=ZS-8zoRifAKgbK",
-    "https://www.tiktok.com/@alpinacol/video/7547743186593008916?_r=1&_t=ZS-8zoReoFAugR",
-    "https://www.tiktok.com/@alpinacol/video/7548118828790664456?_r=1&_t=ZS-8zoRa8RYbDu",
-    "https://www.tiktok.com/@alpinacol/video/7547746657144720660?_r=1&_t=ZS-8zoRVpEExWM",
-    # NUEVOS 24/09/2025
-    "https://www.tiktok.com/@Alpina/video/7548130480986639632?_r=1&_t=ZS-900eQOfqR8y",
-    "https://www.tiktok.com/@Alpina/video/7548129116541685009?_r=1&_t=ZS-900eP8KESlm",
-    "https://www.tiktok.com/@Alpina/video/7548117942119042322?_r=1&_t=ZS-900eGcSaFj5",
-    "https://www.tiktok.com/@user360907502/video/7542610432733859080?_r=1&_t=ZS-900eDVc8Hkg",
-    "https://www.tiktok.com/@Alpina/video/7548130532375186696?_r=1&_t=ZS-900eA9845DE",
-    "https://www.tiktok.com/@Alpina/video/7548130486535589136?_r=1&_t=ZS-900e6AOgLwt"
+    # ...
+    # ...
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -187,7 +132,21 @@ class SocialMediaScraper:
                 if field in comment and comment[field]:
                     created_time = comment[field]
                     break
-            comment_data = {**campaign_info, 'post_url': url, 'post_number': post_number, 'platform': 'Facebook', 'author_name': self.fix_encoding(comment.get('authorName')), 'author_url': comment.get('authorUrl'), 'comment_text': self.fix_encoding(comment.get('text')), 'created_time': created_time, 'likes_count': comment.get('likesCount', 0), 'replies_count': comment.get('repliesCount', 0), 'is_reply': False, 'parent_comment_id': None, 'created_time_raw': str(comment)}
+            comment_data = {
+                **campaign_info,
+                'post_url': url,
+                'post_number': post_number,
+                'platform': 'Facebook',
+                'author_name': self.fix_encoding(comment.get('authorName')),
+                'author_url': comment.get('authorUrl'),
+                'comment_text': self.fix_encoding(comment.get('text')),
+                'created_time': created_time,
+                'likes_count': comment.get('likesCount', 0),
+                'replies_count': comment.get('repliesCount', 0),
+                'is_reply': False,
+                'parent_comment_id': None,
+                'created_time_raw': str(comment)
+            }
             processed.append(comment_data)
         logger.info(f"Processed {len(processed)} Facebook comments.")
         return processed
@@ -204,7 +163,21 @@ class SocialMediaScraper:
                         created_time = comment[field]
                         break
                 author = comment.get('ownerUsername', '')
-                comment_data = {**campaign_info, 'post_url': url, 'post_number': post_number, 'platform': 'Instagram', 'author_name': self.fix_encoding(author), 'author_url': f"https://instagram.com/{author}", 'comment_text': self.fix_encoding(comment.get('text')), 'created_time': created_time, 'likes_count': comment.get('likesCount', 0), 'replies_count': 0, 'is_reply': False, 'parent_comment_id': None, 'created_time_raw': str(comment)}
+                comment_data = {
+                    **campaign_info,
+                    'post_url': url,
+                    'post_number': post_number,
+                    'platform': 'Instagram',
+                    'author_name': self.fix_encoding(author),
+                    'author_url': f"https://instagram.com/{author}",
+                    'comment_text': self.fix_encoding(comment.get('text')),
+                    'created_time': created_time,
+                    'likes_count': comment.get('likesCount', 0),
+                    'replies_count': 0,
+                    'is_reply': False,
+                    'parent_comment_id': None,
+                    'created_time_raw': str(comment)
+                }
                 processed.append(comment_data)
         logger.info(f"Processed {len(processed)} Instagram comments.")
         return processed
@@ -213,38 +186,186 @@ class SocialMediaScraper:
         processed = []
         for comment in items:
             author_id = comment.get('user', {}).get('uniqueId', '')
-            comment_data = {**campaign_info, 'post_url': url, 'post_number': post_number, 'platform': 'TikTok', 'author_name': self.fix_encoding(comment.get('user', {}).get('nickname')), 'author_url': f"https://www.tiktok.com/@{author_id}", 'comment_text': self.fix_encoding(comment.get('text')), 'created_time': comment.get('createTime'), 'likes_count': comment.get('diggCount', 0), 'replies_count': comment.get('replyCommentTotal', 0), 'is_reply': 'replyToId' in comment, 'parent_comment_id': comment.get('replyToId'), 'created_time_raw': str(comment)}
+            comment_data = {
+                **campaign_info,
+                'post_url': url,
+                'post_number': post_number,
+                'platform': 'TikTok',
+                'author_name': self.fix_encoding(comment.get('user', {}).get('nickname')),
+                'author_url': f"https://www.tiktok.com/@{author_id}",
+                'comment_text': self.fix_encoding(comment.get('text')),
+                'created_time': comment.get('createTime'),
+                'likes_count': comment.get('diggCount', 0),
+                'replies_count': comment.get('replyCommentTotal', 0),
+                'is_reply': 'replyToId' in comment,
+                'parent_comment_id': comment.get('replyToId'),
+                'created_time_raw': str(comment)
+            }
             processed.append(comment_data)
         logger.info(f"Processed {len(processed)} TikTok comments.")
         return processed
 
+
+def load_existing_comments(filename):
+    """
+    Carga los comentarios existentes del archivo Excel.
+    Retorna un DataFrame vacío si el archivo no existe.
+    """
+    if not Path(filename).exists():
+        logger.info(f"No existing file found: {filename}. Will create new file.")
+        return pd.DataFrame()
+    
+    try:
+        df_existing = pd.read_excel(filename, sheet_name='Comentarios')
+        logger.info(f"Loaded {len(df_existing)} existing comments from {filename}")
+        return df_existing
+    except Exception as e:
+        logger.error(f"Error loading existing file: {e}")
+        logger.info("Starting with empty DataFrame")
+        return pd.DataFrame()
+
+
+def create_comment_id(row):
+    """
+    Crea un identificador único para cada comentario basado en:
+    - Plataforma
+    - Autor
+    - Texto del comentario
+    - Fecha/hora (si está disponible)
+    
+    Esto permite identificar duplicados incluso cuando el texto es igual.
+    """
+    # Normalizar valores None/NaN
+    platform = str(row.get('platform', '')).strip().lower()
+    author = str(row.get('author_name', '')).strip().lower()
+    text = str(row.get('comment_text', '')).strip().lower()
+    
+    # Para la fecha, intentamos usar created_time_processed primero, luego created_time
+    date_str = ''
+    if 'created_time_processed' in row and pd.notna(row['created_time_processed']):
+        date_str = str(row['created_time_processed'])
+    elif 'created_time' in row and pd.notna(row['created_time']):
+        date_str = str(row['created_time'])
+    
+    # Crear un ID único concatenando los valores
+    unique_id = f"{platform}|{author}|{text}|{date_str}"
+    return unique_id
+
+
+def merge_comments(df_existing, df_new):
+    """
+    Combina comentarios existentes con nuevos, evitando duplicados.
+    
+    Args:
+        df_existing: DataFrame con comentarios existentes
+        df_new: DataFrame con comentarios nuevos
+    
+    Returns:
+        DataFrame combinado sin duplicados
+    """
+    if df_existing.empty:
+        logger.info("No existing comments. All new comments will be added.")
+        return df_new
+    
+    if df_new.empty:
+        logger.info("No new comments to add.")
+        return df_existing
+    
+    # Crear IDs únicos para ambos DataFrames
+    logger.info("Creating unique identifiers for existing comments...")
+    df_existing['_comment_id'] = df_existing.apply(create_comment_id, axis=1)
+    
+    logger.info("Creating unique identifiers for new comments...")
+    df_new['_comment_id'] = df_new.apply(create_comment_id, axis=1)
+    
+    # Identificar comentarios duplicados
+    existing_ids = set(df_existing['_comment_id'])
+    new_ids = set(df_new['_comment_id'])
+    
+    duplicate_ids = existing_ids.intersection(new_ids)
+    unique_new_ids = new_ids - existing_ids
+    
+    logger.info(f"Found {len(duplicate_ids)} duplicate comments")
+    logger.info(f"Found {len(unique_new_ids)} new unique comments to add")
+    
+    # Filtrar solo comentarios nuevos
+    df_truly_new = df_new[df_new['_comment_id'].isin(unique_new_ids)].copy()
+    
+    # Combinar existentes con nuevos
+    df_combined = pd.concat([df_existing, df_truly_new], ignore_index=True)
+    
+    # Eliminar la columna temporal de ID
+    df_combined = df_combined.drop(columns=['_comment_id'])
+    
+    logger.info(f"Total comments after merge: {len(df_combined)}")
+    return df_combined
+
+
 def save_to_excel(df, filename):
+    """
+    Guarda el DataFrame en Excel con dos hojas:
+    1. Comentarios: Todos los comentarios
+    2. Resumen_Posts: Resumen agrupado por post
+    """
     try:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Comentarios', index=False)
+            
             if not df.empty and 'post_number' in df.columns:
-                summary = df.groupby(['post_number', 'platform', 'post_url']).agg(Total_Comentarios=('comment_text', 'count'), Total_Likes=('likes_count', 'sum')).reset_index()
+                summary = df.groupby(['post_number', 'platform', 'post_url']).agg(
+                    Total_Comentarios=('comment_text', 'count'),
+                    Total_Likes=('likes_count', 'sum')
+                ).reset_index()
                 summary.to_excel(writer, sheet_name='Resumen_Posts', index=False)
+        
         logger.info(f"Excel file saved successfully: {filename}")
         return True
     except Exception as e:
         logger.error(f"Error saving Excel file: {e}")
         return False
 
+
 def process_datetime_columns(df):
-    if 'created_time' not in df.columns: return df
+    """
+    Procesa las columnas de fecha/hora para crear campos adicionales útiles.
+    """
+    if 'created_time' not in df.columns:
+        return df
+    
     logger.info("Processing datetime columns...")
-    df['created_time_processed'] = pd.to_datetime(df['created_time'], errors='coerce', utc=True, unit='s')
+    
+    # Intentar convertir created_time a datetime
+    df['created_time_processed'] = pd.to_datetime(
+        df['created_time'], 
+        errors='coerce', 
+        utc=True, 
+        unit='s'
+    )
+    
+    # Si falló la conversión con unit='s', intentar sin unit
     mask = df['created_time_processed'].isna()
-    df.loc[mask, 'created_time_processed'] = pd.to_datetime(df.loc[mask, 'created_time'], errors='coerce', utc=True)
+    df.loc[mask, 'created_time_processed'] = pd.to_datetime(
+        df.loc[mask, 'created_time'], 
+        errors='coerce', 
+        utc=True
+    )
+    
+    # Crear columnas de fecha y hora si hay valores válidos
     if df['created_time_processed'].notna().any():
         df['created_time_processed'] = df['created_time_processed'].dt.tz_localize(None)
         df['fecha_comentario'] = df['created_time_processed'].dt.date
         df['hora_comentario'] = df['created_time_processed'].dt.time
+    
     return df
 
+
 def run_extraction():
+    """
+    Función principal que ejecuta todo el proceso de extracción.
+    Ahora con lógica de append en lugar de sobrescritura.
+    """
     logger.info("--- STARTING COMMENT EXTRACTION PROCESS ---")
+    
     if not APIFY_TOKEN:
         logger.error("APIFY_TOKEN not found in environment variables. Aborting.")
         return
@@ -254,6 +375,12 @@ def run_extraction():
         logger.warning("No valid URLs to process. Exiting.")
         return
 
+    filename = "Comentarios Campaña.xlsx"
+    
+    # --- NUEVA LÓGICA: Cargar comentarios existentes ---
+    df_existing = load_existing_comments(filename)
+    
+    # Extraer nuevos comentarios
     scraper = SocialMediaScraper(APIFY_TOKEN)
     all_comments = []
     post_counter = 0
@@ -262,42 +389,78 @@ def run_extraction():
         post_counter += 1
         platform = scraper.detect_platform(url)
         comments = []
+        
         if platform == 'facebook':
-            comments = scraper.scrape_facebook_comments(url, campaign_info=CAMPAIGN_INFO, post_number=post_counter)
+            comments = scraper.scrape_facebook_comments(
+                url, 
+                campaign_info=CAMPAIGN_INFO, 
+                post_number=post_counter
+            )
         elif platform == 'instagram':
-            comments = scraper.scrape_instagram_comments(url, campaign_info=CAMPAIGN_INFO, post_number=post_counter)
+            comments = scraper.scrape_instagram_comments(
+                url, 
+                campaign_info=CAMPAIGN_INFO, 
+                post_number=post_counter
+            )
         elif platform == 'tiktok':
-            comments = scraper.scrape_tiktok_comments(url, campaign_info=CAMPAIGN_INFO, post_number=post_counter)
+            comments = scraper.scrape_tiktok_comments(
+                url, 
+                campaign_info=CAMPAIGN_INFO, 
+                post_number=post_counter
+            )
         else:
             logger.warning(f"Unknown platform for URL: {url}")
         
         all_comments.extend(comments)
-        # --- MODIFICACIÓN CLAVE ---
+        
+        # Pausa aleatoria entre posts
         if not SOLO_PRIMER_POST and post_counter < len(valid_urls):
-            # Pausa aleatoria entre 1 y 2 minutos para simular comportamiento humano
             pausa_aleatoria = random.uniform(60, 120) 
             logger.info(f"Pausing for {pausa_aleatoria:.2f} seconds to avoid detection...")
             time.sleep(pausa_aleatoria)
-        # --- FIN DE LA MODIFICACIÓN ---
 
     if not all_comments:
-        logger.warning("No comments were extracted. Process finished.")
-        # Pequeña corrección: si no hay comentarios, no se debería intentar guardar un excel vacío
-        # y dar un error, sino terminar limpiamente.
-        return
+        logger.warning("No comments were extracted in this run.")
+        # Si ya hay comentarios existentes, mantenerlos
+        if not df_existing.empty:
+            logger.info(f"Keeping {len(df_existing)} existing comments in file.")
+            return
+        else:
+            logger.info("No new or existing comments. Process finished.")
+            return
 
     logger.info("--- PROCESSING FINAL RESULTS ---")
-    df_comments = pd.DataFrame(all_comments)
-    df_comments = process_datetime_columns(df_comments)
     
-    final_columns = ['post_number', 'platform', 'campaign_name', 'post_url', 'author_name', 'comment_text', 'created_time_processed', 'fecha_comentario', 'hora_comentario', 'likes_count', 'replies_count', 'is_reply', 'author_url', 'created_time_raw']
-    existing_cols = [col for col in final_columns if col in df_comments.columns]
-    df_comments = df_comments[existing_cols]
+    # Procesar nuevos comentarios
+    df_new_comments = pd.DataFrame(all_comments)
+    df_new_comments = process_datetime_columns(df_new_comments)
+    
+    # --- NUEVA LÓGICA: Merge con comentarios existentes ---
+    df_combined = merge_comments(df_existing, df_new_comments)
+    
+    # Ordenar por fecha de comentario (más recientes primero)
+    if 'created_time_processed' in df_combined.columns:
+        df_combined = df_combined.sort_values(
+            'created_time_processed', 
+            ascending=False
+        ).reset_index(drop=True)
+    
+    # Organizar columnas
+    final_columns = [
+        'post_number', 'platform', 'campaign_name', 'post_url', 
+        'author_name', 'comment_text', 'created_time_processed', 
+        'fecha_comentario', 'hora_comentario', 'likes_count', 
+        'replies_count', 'is_reply', 'author_url', 'created_time_raw'
+    ]
+    existing_cols = [col for col in final_columns if col in df_combined.columns]
+    df_combined = df_combined[existing_cols]
 
-    filename = "Comentarios Campaña.xlsx"
-    save_to_excel(df_comments, filename)
+    # Guardar archivo actualizado
+    save_to_excel(df_combined, filename)
+    
     logger.info("--- EXTRACTION PROCESS FINISHED ---")
+    logger.info(f"Total comments in file: {len(df_combined)}")
+
 
 if __name__ == "__main__":
     run_extraction()
-
