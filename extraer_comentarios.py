@@ -23,6 +23,9 @@ URLS_A_PROCESAR = [
     "https://www.instagram.com/p/DPpXWpHjMX2/",
     "https://www.instagram.com/p/DPpVC6UjLlp/",
     "https://www.instagram.com/p/DPzKNF0DIqm/",
+    "https://www.facebook.com/100064867445065/posts/pfbid0N3R82dbJH8TK4stdDiYZPingWQpJ7eRMfk2XATEGWg2GpKDfFTJmbQ1mRbMbi9Pvl?dco_ad_id=120233372150830767",
+    "https://www.instagram.com/p/DPpXA4uDDh4/",
+    
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -847,3 +850,4 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
