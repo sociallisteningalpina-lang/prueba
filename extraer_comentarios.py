@@ -133,8 +133,8 @@ class SocialMediaScraper:
                     break
             comment_data = {
                 **campaign_info,
-                'post_url': normalize_url(url),  # URL normalizada para comparación
-                'post_url_original': url,         # URL original para links
+                'post_url': normalize_url(url),
+                'post_url_original': url,
                 'post_number': post_number,
                 'platform': 'Facebook',
                 'author_name': self.fix_encoding(comment.get('authorName')),
@@ -165,8 +165,8 @@ class SocialMediaScraper:
                 author = comment.get('ownerUsername', '')
                 comment_data = {
                     **campaign_info,
-                    'post_url': normalize_url(url),  # URL normalizada para comparación
-                    'post_url_original': url,         # URL original para links
+                    'post_url': normalize_url(url),
+                    'post_url_original': url,
                     'post_number': post_number,
                     'platform': 'Instagram',
                     'author_name': self.fix_encoding(author),
@@ -189,8 +189,8 @@ class SocialMediaScraper:
             author_id = comment.get('user', {}).get('uniqueId', '')
             comment_data = {
                 **campaign_info,
-                'post_url': normalize_url(url),  # URL normalizada para comparación
-                'post_url_original': url,         # URL original para links
+                'post_url': normalize_url(url),
+                'post_url_original': url,
                 'post_number': post_number,
                 'platform': 'TikTok',
                 'author_name': self.fix_encoding(comment.get('user', {}).get('nickname')),
@@ -208,23 +208,29 @@ class SocialMediaScraper:
         return processed
 
 
+def normalize_url(url):
+    """Normaliza una URL para comparación consistente"""
+    if pd.isna(url) or url == '':
+        return ''
+    url = str(url).strip().lower()
+    if '?' in url:
+        url = url.split('?')[0]
+    if url.endswith('/'):
+        url = url[:-1]
+    return url
+
+
 def create_post_registry_entry(url, platform, campaign_info):
-    """
-    Crea una entrada de registro para una pauta procesada sin comentarios.
-    Esto asegura que todas las pautas se registren en el Excel, 
-    incluso si no tienen comentarios en una ejecución específica.
-    
-    IMPORTANTE: Guarda tanto la URL normalizada como la original.
-    """
+    """Crea una entrada de registro para una pauta procesada sin comentarios"""
     return {
         **campaign_info,
-        'post_url': normalize_url(url),  # URL normalizada para comparación
-        'post_url_original': url,         # URL original para links
-        'post_number': None,  # Se asignará después
+        'post_url': normalize_url(url),
+        'post_url_original': url,
+        'post_number': None,
         'platform': platform,
         'author_name': None,
         'author_url': None,
-        'comment_text': None,  # Explícitamente None, no cadena vacía
+        'comment_text': None,
         'created_time': None,
         'likes_count': 0,
         'replies_count': 0,
@@ -235,68 +241,39 @@ def create_post_registry_entry(url, platform, campaign_info):
 
 
 def assign_consistent_post_numbers(df):
-    """
-    Asigna números de pauta consistentes basados en el orden de primera aparición.
-    
-    IMPORTANTE: Preserva los post_numbers que ya existen en el DataFrame.
-    Solo asigna números nuevos a URLs que no tenían número previamente.
-    
-    Esto mantiene los post_numbers estables entre ejecuciones.
-    """
+    """Asigna números de pauta consistentes basados en el orden de primera aparición"""
     if df.empty:
         return df
     
-    # Paso 1: Identificar URLs que YA tienen un post_number asignado
-    # Crear un mapeo de URL → post_number existente
     df_with_numbers = df[df['post_number'].notna()].copy()
     existing_mapping = {}
     
     if not df_with_numbers.empty:
-        # Para cada URL, obtener su post_number más común (en caso de inconsistencias)
         for url in df_with_numbers['post_url'].unique():
             if pd.notna(url):
-                # Obtener el post_number más frecuente para esta URL
                 url_numbers = df_with_numbers[df_with_numbers['post_url'] == url]['post_number']
                 most_common = url_numbers.mode()
                 if len(most_common) > 0:
                     existing_mapping[url] = int(most_common.iloc[0])
     
-    logger.info(f"Found {len(existing_mapping)} URLs with existing post_numbers")
-    
-    # Paso 2: Identificar URLs que NO tienen post_number
     all_urls = df['post_url'].dropna().unique()
     new_urls = [url for url in all_urls if url not in existing_mapping]
     
-    logger.info(f"Found {len(new_urls)} URLs without post_numbers (will assign new numbers)")
-    
-    # Paso 3: Encontrar el siguiente número disponible
     if existing_mapping:
         next_number = max(existing_mapping.values()) + 1
     else:
         next_number = 1
     
-    # Paso 4: Asignar números a URLs nuevas
     for url in new_urls:
         existing_mapping[url] = next_number
-        logger.info(f"Assigning post_number {next_number} to new URL: {url[:50]}...")
         next_number += 1
     
-    # Paso 5: Aplicar el mapeo completo al DataFrame
     df['post_number'] = df['post_url'].map(existing_mapping)
-    
     return df
 
 
 def load_existing_comments(filename):
-    """
-    Carga los comentarios existentes del archivo Excel.
-    Retorna un DataFrame vacío si el archivo no existe.
-    
-    IMPORTANTE: 
-    - Normaliza cadenas vacías a NaN y normaliza URLs
-    - LIMPIA AUTOMÁTICAMENTE cualquier duplicado existente en el archivo
-    - Garantiza que el Excel siempre esté limpio sin scripts adicionales
-    """
+    """Carga los comentarios existentes del archivo Excel"""
     if not Path(filename).exists():
         logger.info(f"No existing file found: {filename}. Will create new file.")
         return pd.DataFrame()
@@ -304,276 +281,108 @@ def load_existing_comments(filename):
     try:
         df_existing = pd.read_excel(filename, sheet_name='Comentarios')
         logger.info(f"Loaded {len(df_existing)} existing rows from {filename}")
-        original_count = len(df_existing)
         
-        # PASO 1: Normalizar cadenas vacías a NaN
+        # Normalizar cadenas vacías a NaN
         if 'comment_text' in df_existing.columns:
             df_existing['comment_text'] = df_existing['comment_text'].replace('', pd.NA)
             df_existing['comment_text'] = df_existing['comment_text'].apply(
                 lambda x: pd.NA if isinstance(x, str) and x.strip() == '' else x
             )
-            df_existing['comment_text'] = df_existing['comment_text'].apply(
-                lambda x: pd.NA if isinstance(x, str) and x.lower() == 'nan' else x
-            )
         
-        # PASO 2: Normalizar URLs
+        # Crear post_url_original si no existe
+        if 'post_url_original' not in df_existing.columns:
+            logger.info("Creating post_url_original from post_url")
+            df_existing['post_url_original'] = df_existing['post_url'].copy()
+        
+        # Normalizar URLs
         if 'post_url' in df_existing.columns:
-            # Si no existe post_url_original, crear una copia antes de normalizar
-            if 'post_url_original' not in df_existing.columns:
-                logger.info("  ✓ Creating post_url_original column from existing post_url")
-                df_existing['post_url_original'] = df_existing['post_url'].copy()
-            
-            # Normalizar post_url para comparaciones
             df_existing['post_url'] = df_existing['post_url'].apply(normalize_url)
-        
-        # PASO 3: LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
-        logger.info("Checking for and removing any duplicate entries...")
-        
-        # Separar comentarios de registry entries
-        is_registry = df_existing.apply(is_registry_entry, axis=1)
-        comments_df = df_existing[~is_registry].copy()
-        registry_df = df_existing[is_registry].copy()
-        
-        # Limpiar duplicados en registry entries (mantener solo uno por URL)
-        if not registry_df.empty:
-            registry_df_clean = registry_df.drop_duplicates(subset=['post_url'], keep='first')
-            removed_registry = len(registry_df) - len(registry_df_clean)
-            if removed_registry > 0:
-                logger.info(f"  ✓ Removed {removed_registry} duplicate registry entries")
-        else:
-            registry_df_clean = registry_df
-        
-        # Limpiar duplicados en comentarios
-        if not comments_df.empty:
-            # Crear ID temporal para detectar duplicados
-            comments_df['_temp_id'] = comments_df.apply(create_comment_id, axis=1)
-            comments_df_clean = comments_df.drop_duplicates(subset=['_temp_id'], keep='first')
-            comments_df_clean = comments_df_clean.drop(columns=['_temp_id'])
-            
-            removed_comments = len(comments_df) - len(comments_df_clean)
-            if removed_comments > 0:
-                logger.info(f"  ✓ Removed {removed_comments} duplicate comments")
-        else:
-            comments_df_clean = comments_df
-        
-        # Recombinar
-        df_existing = pd.concat([comments_df_clean, registry_df_clean], ignore_index=True)
-        
-        total_removed = original_count - len(df_existing)
-        if total_removed > 0:
-            logger.info(f"  ✓ Total duplicates removed: {total_removed}")
-            logger.info(f"  ✓ Clean rows: {len(df_existing)}")
-        else:
-            logger.info(f"  ✓ No duplicates found. File is clean.")
-        
-        # Contar tipos de entradas
-        registry_count = sum(1 for idx, row in df_existing.iterrows() if is_registry_entry(row))
-        comment_count = len(df_existing) - registry_count
-        
-        logger.info(f"Final existing data: {comment_count} comments, {registry_count} registry entries")
         
         return df_existing
     except Exception as e:
         logger.error(f"Error loading existing file: {e}")
-        logger.info("Starting with empty DataFrame")
         return pd.DataFrame()
 
 
-def normalize_url(url):
-    """
-    Normaliza una URL para comparación consistente:
-    - Elimina espacios en blanco
-    - Convierte a minúsculas
-    - Elimina barra final
-    - Elimina parámetros de query (todo después de '?')
-    """
-    if pd.isna(url) or url == '':
-        return ''
-    
-    url = str(url).strip().lower()
-    
-    # Eliminar parámetros de query
-    if '?' in url:
-        url = url.split('?')[0]
-    
-    # Eliminar barra final
-    if url.endswith('/'):
-        url = url[:-1]
-    
-    return url
-
-
 def is_registry_entry(row):
-    """
-    Determina si una fila es una entrada de registro (pauta sin comentarios).
-    Considera tanto NaN como cadenas vacías.
-    """
+    """Determina si una fila es una entrada de registro (pauta sin comentarios)"""
     if 'comment_text' not in row.index:
         return True
-    
     comment = row['comment_text']
-    
-    # Es registro si es NaN, None, o cadena vacía/solo espacios
     if pd.isna(comment):
         return True
-    
     if isinstance(comment, str) and comment.strip() == '':
         return True
-    
     return False
 
 
 def create_comment_id(row):
-    """
-    Crea un identificador único para cada comentario basado en:
-    - Plataforma
-    - Autor
-    - Texto del comentario
-    - Fecha/hora (si está disponible)
-    
-    Para entradas de registro (pautas sin comentarios), usa solo la URL NORMALIZADA.
-    Esto permite identificar duplicados incluso cuando el texto es igual.
-    """
-    # Caso especial: entrada de registro de pauta sin comentarios
+    """Crea un identificador único para cada comentario"""
     if is_registry_entry(row):
-        # Para registros de pautas sin comentarios, usar solo la URL normalizada
         post_url = row.get('post_url', '') if 'post_url' in row.index else ''
         normalized_url = normalize_url(post_url)
-        
         if not normalized_url:
-            # Si no hay URL, generar un ID basado en platform al menos
             platform = str(row.get('platform', 'unknown')) if 'platform' in row.index else 'unknown'
             return f"REGISTRY|NO_URL|{platform}"
-        
-        unique_id = f"REGISTRY|{normalized_url}"
-        return unique_id
+        return f"REGISTRY|{normalized_url}"
     
-    # Normalizar valores None/NaN - usar notación de corchetes para Series/DataFrame
     platform = str(row['platform']) if 'platform' in row.index and pd.notna(row['platform']) else ''
     platform = platform.strip().lower()
     
     author = str(row['author_name']) if 'author_name' in row.index and pd.notna(row['author_name']) else ''
     author = author.strip().lower()
     
-    # Para el texto, normalizar Unicode y espacios
     text = ''
     if 'comment_text' in row.index and pd.notna(row['comment_text']):
         text = str(row['comment_text']).strip().lower()
-        # Normalizar Unicode a NFC (forma canónica compuesta)
-        import unicodedata
         text = unicodedata.normalize('NFC', text)
     
-    # Para la fecha, intentamos usar created_time_processed primero, luego created_time
     date_str = ''
     if 'created_time_processed' in row.index and pd.notna(row['created_time_processed']):
         date_str = str(row['created_time_processed'])
     elif 'created_time' in row.index and pd.notna(row['created_time']):
         date_str = str(row['created_time'])
     
-    # Crear un ID único concatenando los valores
     unique_id = f"{platform}|{author}|{text}|{date_str}"
     return unique_id
 
 
 def merge_comments(df_existing, df_new):
-    """
-    Combina comentarios existentes con nuevos, evitando duplicados.
-    
-    Args:
-        df_existing: DataFrame con comentarios existentes
-        df_new: DataFrame con comentarios nuevos
-    
-    Returns:
-        DataFrame combinado sin duplicados
-    """
+    """Combina comentarios existentes con nuevos, evitando duplicados"""
     if df_existing.empty:
-        logger.info("No existing comments. All new comments will be added.")
         return df_new
-    
     if df_new.empty:
-        logger.info("No new comments to add.")
         return df_existing
     
-    logger.info(f"Starting merge process...")
-    logger.info(f"  - Existing rows: {len(df_existing)}")
-    logger.info(f"    · With comments: {df_existing['comment_text'].notna().sum()}")
-    logger.info(f"    · Registry entries (no comments): {df_existing['comment_text'].isna().sum()}")
-    logger.info(f"  - New rows extracted: {len(df_new)}")
-    logger.info(f"    · With comments: {df_new['comment_text'].notna().sum()}")
-    logger.info(f"    · Registry entries (no comments): {df_new['comment_text'].isna().sum()}")
+    logger.info(f"Merging: {len(df_existing)} existing + {len(df_new)} new rows")
     
-    # Crear IDs únicos para ambos DataFrames
-    logger.info("Creating unique identifiers for existing entries...")
     df_existing['_comment_id'] = df_existing.apply(create_comment_id, axis=1)
-    
-    logger.info("Creating unique identifiers for new entries...")
     df_new['_comment_id'] = df_new.apply(create_comment_id, axis=1)
     
-    # Debug: Mostrar algunos ejemplos de IDs generados
-    logger.info(f"Sample existing IDs (first 5):")
-    for i, (idx, row) in enumerate(df_existing.head(5).iterrows()):
-        comment_type = "COMMENT" if pd.notna(row['comment_text']) else "REGISTRY"
-        logger.info(f"  {i+1}. [{comment_type}] {row['_comment_id'][:100]}")
-    
-    logger.info(f"Sample new IDs (first 5):")
-    for i, (idx, row) in enumerate(df_new.head(5).iterrows()):
-        comment_type = "COMMENT" if pd.notna(row['comment_text']) else "REGISTRY"
-        logger.info(f"  {i+1}. [{comment_type}] {row['_comment_id'][:100]}")
-    
-    # Identificar comentarios duplicados
     existing_ids = set(df_existing['_comment_id'])
     new_ids = set(df_new['_comment_id'])
-    
-    duplicate_ids = existing_ids.intersection(new_ids)
     unique_new_ids = new_ids - existing_ids
     
-    # Contar duplicados por tipo
-    duplicate_registry = sum(1 for id_val in duplicate_ids if id_val.startswith('REGISTRY|'))
-    duplicate_comments = len(duplicate_ids) - duplicate_registry
-    
-    logger.info(f"Duplicate detection results:")
-    logger.info(f"  - Total duplicates found: {len(duplicate_ids)}")
-    logger.info(f"    · Duplicate registry entries: {duplicate_registry}")
-    logger.info(f"    · Duplicate comments: {duplicate_comments}")
-    logger.info(f"  - Unique new entries: {len(unique_new_ids)}")
-    
-    if duplicate_registry > 0:
-        logger.info(f"✓ Registry entries correctly detected as duplicates (will not be added again)")
-    
-    # Filtrar solo comentarios nuevos
     df_truly_new = df_new[df_new['_comment_id'].isin(unique_new_ids)].copy()
+    logger.info(f"Adding {len(df_truly_new)} new unique entries")
     
-    logger.info(f"Adding {len(df_truly_new)} new unique entries:")
-    logger.info(f"  - New comments: {df_truly_new['comment_text'].notna().sum()}")
-    logger.info(f"  - New registry entries: {df_truly_new['comment_text'].isna().sum()}")
-    
-    # Combinar existentes con nuevos
     df_combined = pd.concat([df_existing, df_truly_new], ignore_index=True)
-    
-    # Eliminar la columna temporal de ID
     df_combined = df_combined.drop(columns=['_comment_id'])
     
-    logger.info(f"Merge complete. Total rows in combined DataFrame: {len(df_combined)}")
     return df_combined
 
 
 def save_to_excel(df, filename):
-    """
-    Guarda el DataFrame en Excel con dos hojas:
-    1. Comentarios: Todos los comentarios
-    2. Resumen_Posts: Resumen agrupado por post
-    """
+    """Guarda el DataFrame en Excel"""
     try:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Comentarios', index=False)
-            
             if not df.empty and 'post_number' in df.columns:
                 summary = df.groupby(['post_number', 'platform', 'post_url']).agg(
                     Total_Comentarios=('comment_text', 'count'),
                     Total_Likes=('likes_count', 'sum')
                 ).reset_index()
                 summary.to_excel(writer, sheet_name='Resumen_Posts', index=False)
-        
         logger.info(f"Excel file saved successfully: {filename}")
         return True
     except Exception as e:
@@ -582,31 +391,14 @@ def save_to_excel(df, filename):
 
 
 def process_datetime_columns(df):
-    """
-    Procesa las columnas de fecha/hora para crear campos adicionales útiles.
-    """
+    """Procesa las columnas de fecha/hora"""
     if 'created_time' not in df.columns:
         return df
     
-    logger.info("Processing datetime columns...")
-    
-    # Intentar convertir created_time a datetime
-    df['created_time_processed'] = pd.to_datetime(
-        df['created_time'], 
-        errors='coerce', 
-        utc=True, 
-        unit='s'
-    )
-    
-    # Si falló la conversión con unit='s', intentar sin unit
+    df['created_time_processed'] = pd.to_datetime(df['created_time'], errors='coerce', utc=True, unit='s')
     mask = df['created_time_processed'].isna()
-    df.loc[mask, 'created_time_processed'] = pd.to_datetime(
-        df.loc[mask, 'created_time'], 
-        errors='coerce', 
-        utc=True
-    )
+    df.loc[mask, 'created_time_processed'] = pd.to_datetime(df.loc[mask, 'created_time'], errors='coerce', utc=True)
     
-    # Crear columnas de fecha y hora si hay valores válidos
     if df['created_time_processed'].notna().any():
         df['created_time_processed'] = df['created_time_processed'].dt.tz_localize(None)
         df['fecha_comentario'] = df['created_time_processed'].dt.date
@@ -616,10 +408,7 @@ def process_datetime_columns(df):
 
 
 def run_extraction():
-    """
-    Función principal que ejecuta todo el proceso de extracción.
-    Ahora con lógica de append en lugar de sobrescritura.
-    """
+    """Función principal que ejecuta todo el proceso de extracción"""
     logger.info("=" * 60)
     logger.info("--- STARTING COMMENT EXTRACTION PROCESS ---")
     logger.info("=" * 60)
@@ -633,204 +422,76 @@ def run_extraction():
     
     if not valid_urls:
         logger.warning("No valid URLs to process. Exiting.")
-        logger.warning("Please add URLs to the URLS_A_PROCESAR list.")
         return
 
     filename = "Comentarios Campaña.xlsx"
-    logger.info(f"Output file: {filename}")
-    
-    # --- NUEVA LÓGICA: Cargar comentarios existentes ---
     df_existing = load_existing_comments(filename)
     
-    # Extraer nuevos comentarios
     scraper = SocialMediaScraper(APIFY_TOKEN)
     all_comments = []
-    processed_urls_info = []  # Registro de todas las URLs procesadas
     post_counter = 0
 
     for url in valid_urls:
         post_counter += 1
         platform = scraper.detect_platform(url)
-        
-        # Registrar esta URL como procesada
-        processed_urls_info.append({
-            'url': url,
-            'platform': platform,
-            'temp_post_number': post_counter
-        })
-        
         comments = []
         
         if platform == 'facebook':
-            comments = scraper.scrape_facebook_comments(
-                url, 
-                campaign_info=CAMPAIGN_INFO, 
-                post_number=post_counter
-            )
+            comments = scraper.scrape_facebook_comments(url, campaign_info=CAMPAIGN_INFO, post_number=post_counter)
         elif platform == 'instagram':
-            comments = scraper.scrape_instagram_comments(
-                url, 
-                campaign_info=CAMPAIGN_INFO, 
-                post_number=post_counter
-            )
+            comments = scraper.scrape_instagram_comments(url, campaign_info=CAMPAIGN_INFO, post_number=post_counter)
         elif platform == 'tiktok':
-            comments = scraper.scrape_tiktok_comments(
-                url, 
-                campaign_info=CAMPAIGN_INFO, 
-                post_number=post_counter
-            )
-        else:
-            logger.warning(f"Unknown platform for URL: {url}")
+            comments = scraper.scrape_tiktok_comments(url, campaign_info=CAMPAIGN_INFO, post_number=post_counter)
         
-        # Si no hay comentarios, crear entrada de registro
         if not comments:
-            logger.info(f"No comments found for {url}. Creating registry entry.")
             registry_entry = create_post_registry_entry(url, platform, CAMPAIGN_INFO)
             registry_entry['post_number'] = post_counter
             all_comments.append(registry_entry)
         else:
             all_comments.extend(comments)
         
-        # Pausa aleatoria entre posts
         if not SOLO_PRIMER_POST and post_counter < len(valid_urls):
-            pausa_aleatoria = random.uniform(60, 120) 
-            logger.info(f"Pausing for {pausa_aleatoria:.2f} seconds to avoid detection...")
-            time.sleep(pausa_aleatoria)
-
-    logger.info(f"Processed {len(valid_urls)} URLs with {len([c for c in all_comments if c.get('comment_text')])} actual comments")
+            pausa = random.uniform(60, 120)
+            logger.info(f"Pausing for {pausa:.2f} seconds...")
+            time.sleep(pausa)
 
     if not all_comments:
-        logger.warning("No comments or URLs were processed in this run.")
-        # Si ya hay comentarios existentes, mantenerlos y guardar el archivo
         if not df_existing.empty:
-            logger.info(f"Keeping {len(df_existing)} existing comments in file.")
             save_to_excel(df_existing, filename)
-            logger.info("--- EXTRACTION PROCESS FINISHED ---")
-            logger.info(f"Total comments in file: {len(df_existing)}")
-            return
-        else:
-            logger.info("No new or existing comments. Creating empty file for future use.")
-            # Crear un DataFrame vacío con las columnas correctas
-            empty_df = pd.DataFrame(columns=[
-                'post_number', 'platform', 'campaign_name', 'post_url', 
-                'author_name', 'comment_text', 'created_time_processed', 
-                'fecha_comentario', 'hora_comentario', 'likes_count', 
-                'replies_count', 'is_reply', 'author_url', 'created_time_raw'
-            ])
-            save_to_excel(empty_df, filename)
-            logger.info("Empty Excel file created. Process finished.")
-            return
+        return
 
-    logger.info("--- PROCESSING FINAL RESULTS ---")
-    
-    # Procesar nuevos comentarios
     df_new_comments = pd.DataFrame(all_comments)
     df_new_comments = process_datetime_columns(df_new_comments)
     
-    # CRÍTICO: Normalizar datos antes del merge
-    logger.info("Normalizing new data for consistent comparison...")
-    
-    # 1. Convertir cadenas vacías a NaN en comment_text
+    # Normalizar datos
     if 'comment_text' in df_new_comments.columns:
         df_new_comments['comment_text'] = df_new_comments['comment_text'].replace('', pd.NA)
-        df_new_comments['comment_text'] = df_new_comments['comment_text'].apply(
-            lambda x: pd.NA if isinstance(x, str) and x.strip() == '' else x
-        )
-    
-    # 2. Normalizar URLs
     if 'post_url' in df_new_comments.columns:
         df_new_comments['post_url'] = df_new_comments['post_url'].apply(normalize_url)
     
-    # Contar tipos en nuevos datos
-    new_registry = sum(1 for idx, row in df_new_comments.iterrows() if is_registry_entry(row))
-    new_comments = len(df_new_comments) - new_registry
-    logger.info(f"New data normalized: {new_comments} comments, {new_registry} registry entries")
-    
-    # --- NUEVA LÓGICA: Merge con comentarios existentes ---
     df_combined = merge_comments(df_existing, df_new_comments)
     
-    # --- LIMPIEZA CRÍTICA: Eliminar registry entries si ahora hay comentarios reales ---
-    logger.info("Checking for registry entries that now have real comments...")
-    
-    # Identificar qué filas son registry entries
+    # Limpiar registry entries obsoletas
     is_registry_mask = df_combined.apply(is_registry_entry, axis=1)
-    
-    # Identificar URLs que tienen comentarios reales
-    urls_with_comments = set(
-        df_combined[~is_registry_mask]['post_url'].dropna().unique()
-    )
+    urls_with_comments = set(df_combined[~is_registry_mask]['post_url'].dropna().unique())
     
     if urls_with_comments:
-        # Filtrar registry entries: mantener solo las que NO tienen comentarios reales
-        registry_entries = df_combined[is_registry_mask].copy()
-        obsolete_registries = registry_entries[
-            registry_entries['post_url'].isin(urls_with_comments)
-        ]
-        
-        if not obsolete_registries.empty:
-            logger.info(f"  ✓ Found {len(obsolete_registries)} registry entries that now have real comments")
-            logger.info(f"    Removing obsolete registry entries...")
-            
-            # Eliminar registry entries obsoletas
-            df_combined = df_combined[
-                ~(is_registry_mask & df_combined['post_url'].isin(urls_with_comments))
-            ].copy()
-            
-            logger.info(f"  ✓ Removed {len(obsolete_registries)} obsolete registry entries")
-            logger.info(f"  ✓ These URLs now have real comments instead")
-        else:
-            logger.info(f"  ✓ No obsolete registry entries found")
-    else:
-        logger.info(f"  ✓ No comments in dataset, registry entries preserved")
+        df_combined = df_combined[~(is_registry_mask & df_combined['post_url'].isin(urls_with_comments))].copy()
     
-    # --- IMPORTANTE: Reasignar post_numbers de forma consistente ---
-    # Esto asegura que cada URL única tenga siempre el mismo post_number
     df_combined = assign_consistent_post_numbers(df_combined)
     
-    # Ordenar por fecha de comentario (más recientes primero), pero manteniendo registros sin comentario al final
+    # Ordenar
     df_with_comments = df_combined[df_combined['comment_text'].notna()].copy()
     df_without_comments = df_combined[df_combined['comment_text'].isna()].copy()
     
     if not df_with_comments.empty and 'created_time_processed' in df_with_comments.columns:
-        df_with_comments = df_with_comments.sort_values(
-            'created_time_processed', 
-            ascending=False
-        )
+        df_with_comments = df_with_comments.sort_values('created_time_processed', ascending=False)
     
-    # Combinar: primero comentarios, luego registros de pautas sin comentarios
     df_combined = pd.concat([df_with_comments, df_without_comments], ignore_index=True)
-    
-    # --- LIMPIEZA FINAL: Asegurar que no haya duplicados antes de guardar ---
-    logger.info("Final deduplication check before saving...")
-    original_combined_count = len(df_combined)
-    
-    # Separar para limpiar
-    is_registry_final = df_combined.apply(is_registry_entry, axis=1)
-    comments_final = df_combined[~is_registry_final].copy()
-    registry_final = df_combined[is_registry_final].copy()
-    
-    # Limpiar duplicados finales en registry
-    if not registry_final.empty:
-        registry_final = registry_final.drop_duplicates(subset=['post_url'], keep='first')
-    
-    # Limpiar duplicados finales en comentarios
-    if not comments_final.empty:
-        comments_final['_temp_id'] = comments_final.apply(create_comment_id, axis=1)
-        comments_final = comments_final.drop_duplicates(subset=['_temp_id'], keep='first')
-        comments_final = comments_final.drop(columns=['_temp_id'])
-    
-    # Recombinar
-    df_combined = pd.concat([comments_final, registry_final], ignore_index=True)
-    
-    final_removed = original_combined_count - len(df_combined)
-    if final_removed > 0:
-        logger.info(f"  ✓ Removed {final_removed} final duplicates before saving")
-    else:
-        logger.info(f"  ✓ No duplicates found in final data")
     
     # Organizar columnas
     final_columns = [
-        'post_number', 'platform', 'campaign_name', 'post_url', 
+        'post_number', 'platform', 'campaign_name', 'post_url', 'post_url_original',
         'author_name', 'comment_text', 'created_time_processed', 
         'fecha_comentario', 'hora_comentario', 'likes_count', 
         'replies_count', 'is_reply', 'author_url', 'created_time_raw'
@@ -838,22 +499,19 @@ def run_extraction():
     existing_cols = [col for col in final_columns if col in df_combined.columns]
     df_combined = df_combined[existing_cols]
 
-    # Guardar archivo actualizado
     save_to_excel(df_combined, filename)
     
-    # Calcular estadísticas finales
-    total_rows = len(df_combined)
     total_comments = df_combined['comment_text'].notna().sum()
     total_posts = df_combined['post_url'].nunique()
     
     logger.info("=" * 60)
     logger.info("--- EXTRACTION PROCESS FINISHED ---")
-    logger.info(f"Total unique posts/pautas tracked: {total_posts}")
+    logger.info(f"Total unique posts tracked: {total_posts}")
     logger.info(f"Total comments in file: {total_comments}")
-    logger.info(f"Total rows in file: {total_rows} (includes {total_rows - total_comments} post registry entries)")
     logger.info(f"File saved: {filename}")
     logger.info("=" * 60)
 
 
 if __name__ == "__main__":
     run_extraction()
+
