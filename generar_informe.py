@@ -22,8 +22,14 @@ def run_report_generation():
     df['created_time_processed'] = pd.to_datetime(df['created_time_processed'])
     df['created_time_colombia'] = df['created_time_processed'] - pd.Timedelta(hours=5)
 
+    # Asegurar que exista post_url_original (para archivos antiguos)
+    if 'post_url_original' not in df.columns:
+        print("⚠️  Nota: post_url_original no encontrado, usando post_url para links")
+        df['post_url_original'] = df['post_url'].copy()
+
     # --- Lógica de listado de pautas ---
-    all_unique_posts = df[['post_url', 'platform']].drop_duplicates().copy()
+    # Usamos post_url (normalizado) para agrupación, pero guardamos post_url_original para links
+    all_unique_posts = df[['post_url', 'post_url_original', 'platform']].drop_duplicates(subset=['post_url']).copy()
     all_unique_posts.dropna(subset=['post_url'], inplace=True)
 
     df_comments = df.dropna(subset=['created_time_colombia', 'comment_text', 'post_url']).copy()
@@ -264,7 +270,9 @@ def run_report_generation():
                     tableHTML += '</th><th>Enlace</th></tr>';
                     
                     paginatedPosts.forEach(p => {{
-                        tableHTML += `<tr><td>${{p.post_label}}</td><td><b>${{p.comment_count}}</b></td><td><a href="${{p.post_url}}" target="_blank">Ver Pauta</a></td></tr>`;
+                        // Usar post_url_original para el link (o post_url como fallback)
+                        const linkUrl = p.post_url_original || p.post_url;
+                        tableHTML += `<tr><td>${{p.post_label}}</td><td><b>${{p.comment_count}}</b></td><td><a href="${{linkUrl}}" target="_blank">Ver Pauta</a></td></tr>`;
                     }});
                     tableHTML += '</table>';
                     tableDiv.innerHTML = tableHTML;
