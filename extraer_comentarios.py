@@ -23,9 +23,6 @@ URLS_A_PROCESAR = [
     "https://www.instagram.com/p/DPpXWpHjMX2/",
     "https://www.instagram.com/p/DPpVC6UjLlp/",
     "https://www.instagram.com/p/DPzKNF0DIqm/",
-    "https://www.facebook.com/100064867445065/posts/pfbid0N3R82dbJH8TK4stdDiYZPingWQpJ7eRMfk2XATEGWg2GpKDfFTJmbQ1mRbMbi9Pvl?dco_ad_id=120233372150830767",
-    "https://www.instagram.com/p/DPpXA4uDDh4/",
-    
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -136,7 +133,8 @@ class SocialMediaScraper:
                     break
             comment_data = {
                 **campaign_info,
-                'post_url': url,
+                'post_url': normalize_url(url),  # URL normalizada para comparación
+                'post_url_original': url,         # URL original para links
                 'post_number': post_number,
                 'platform': 'Facebook',
                 'author_name': self.fix_encoding(comment.get('authorName')),
@@ -167,7 +165,8 @@ class SocialMediaScraper:
                 author = comment.get('ownerUsername', '')
                 comment_data = {
                     **campaign_info,
-                    'post_url': url,
+                    'post_url': normalize_url(url),  # URL normalizada para comparación
+                    'post_url_original': url,         # URL original para links
                     'post_number': post_number,
                     'platform': 'Instagram',
                     'author_name': self.fix_encoding(author),
@@ -190,7 +189,8 @@ class SocialMediaScraper:
             author_id = comment.get('user', {}).get('uniqueId', '')
             comment_data = {
                 **campaign_info,
-                'post_url': url,
+                'post_url': normalize_url(url),  # URL normalizada para comparación
+                'post_url_original': url,         # URL original para links
                 'post_number': post_number,
                 'platform': 'TikTok',
                 'author_name': self.fix_encoding(comment.get('user', {}).get('nickname')),
@@ -214,11 +214,12 @@ def create_post_registry_entry(url, platform, campaign_info):
     Esto asegura que todas las pautas se registren en el Excel, 
     incluso si no tienen comentarios en una ejecución específica.
     
-    IMPORTANTE: Normaliza la URL para garantizar comparaciones consistentes.
+    IMPORTANTE: Guarda tanto la URL normalizada como la original.
     """
     return {
         **campaign_info,
-        'post_url': normalize_url(url),  # URL normalizada
+        'post_url': normalize_url(url),  # URL normalizada para comparación
+        'post_url_original': url,         # URL original para links
         'post_number': None,  # Se asignará después
         'platform': platform,
         'author_name': None,
@@ -317,6 +318,12 @@ def load_existing_comments(filename):
         
         # PASO 2: Normalizar URLs
         if 'post_url' in df_existing.columns:
+            # Si no existe post_url_original, crear una copia antes de normalizar
+            if 'post_url_original' not in df_existing.columns:
+                logger.info("  ✓ Creating post_url_original column from existing post_url")
+                df_existing['post_url_original'] = df_existing['post_url'].copy()
+            
+            # Normalizar post_url para comparaciones
             df_existing['post_url'] = df_existing['post_url'].apply(normalize_url)
         
         # PASO 3: LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
@@ -850,4 +857,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
