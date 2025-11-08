@@ -120,12 +120,41 @@
 
                 const updatePostLinks = () => {
                     const selectedPlatform = platformFilter.value;
-                    const postsToShow = (selectedPlatform === 'Todas') ? allPostsData : allPostsData.filter(p => p.platform === selectedPlatform);
+                    const selectedTopic = topicFilter.value;
+                    
+                    // Filtrar pautas por plataforma
+                    let postsToShow = (selectedPlatform === 'Todas') ? allPostsData : allPostsData.filter(p => p.platform === selectedPlatform);
+                    
+                    // NUEVO: Filtrar pautas por tema
+                    // Solo mostrar pautas que tienen comentarios del tema seleccionado
+                    if (selectedTopic !== 'Todos') {
+                        const urlsWithTopic = new Set(
+                            allData.filter(d => d.topic === selectedTopic).map(d => d.post_url)
+                        );
+                        postsToShow = postsToShow.filter(p => urlsWithTopic.has(p.post_url));
+                        
+                        // Recalcular conteos de comentarios solo para el tema seleccionado
+                        postsToShow = postsToShow.map(p => {
+                            const topicComments = allData.filter(d => d.post_url === p.post_url && d.topic === selectedTopic);
+                            return {
+                                ...p,
+                                comment_count: topicComments.length,
+                                original_count: p.comment_count
+                            };
+                        });
+                        
+                        // Re-ordenar por conteo de comentarios del tema
+                        postsToShow.sort((a, b) => b.comment_count - a.comment_count);
+                    }
                     
                     const tableDiv = document.getElementById('post-links-table');
                     const paginationDiv = document.getElementById('post-links-pagination');
                     tableDiv.innerHTML = ''; paginationDiv.innerHTML = '';
-                    if (postsToShow.length === 0) return;
+                    
+                    if (postsToShow.length === 0) {
+                        tableDiv.innerHTML = "<p style='text-align:center; padding:20px;'>No hay pautas con comentarios del tema seleccionado.</p>";
+                        return;
+                    }
 
                     const totalPages = Math.ceil(postsToShow.length / POST_LINKS_PER_PAGE);
                     if (postLinksCurrentPage > totalPages) postLinksCurrentPage = 1;
@@ -133,7 +162,12 @@
                     const startIndex = (postLinksCurrentPage - 1) * POST_LINKS_PER_PAGE;
                     const paginatedPosts = postsToShow.slice(startIndex, startIndex + POST_LINKS_PER_PAGE);
 
-                    let tableHTML = '<table><tr><th>Pauta</th><th>Total Comentarios</th><th>Enlace</th></tr>';
+                    let tableHTML = '<table><tr><th>Pauta</th><th>Comentarios';
+                    if (selectedTopic !== 'Todos') {
+                        tableHTML += ' (Tema Seleccionado)';
+                    }
+                    tableHTML += '</th><th>Enlace</th></tr>';
+                    
                     paginatedPosts.forEach(p => {
                         tableHTML += `<tr><td>${p.post_label}</td><td><b>${p.comment_count}</b></td><td><a href="${p.post_url}" target="_blank">Ver Pauta</a></td></tr>`;
                     });
@@ -326,7 +360,7 @@
 
                 platformFilter.addEventListener('change', () => { updatePostFilterOptions(); postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); });
                 postFilter.addEventListener('change', updateDashboard);
-                topicFilter.addEventListener('change', updateDashboard);
+                topicFilter.addEventListener('change', () => { postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); });
                 startDateInput.addEventListener('change', updateDashboard); 
                 startTimeInput.addEventListener('change', updateDashboard);
                 endDateInput.addEventListener('change', updateDashboard); 
