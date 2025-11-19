@@ -1,0 +1,8 @@
+{
+  "max_retries": 3,
+  "pause_between_urls_min": 30,
+  "pause_between_urls_max": 60,
+  "max_comments_per_post": 500,
+  "solo_primer_post": false,
+  "output_filename": "Comentarios Campaña.xlsx"
+}
