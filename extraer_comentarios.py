@@ -617,11 +617,50 @@ def create_failed_registry_entry(
         'extraction_status': 'FAILED'
     }
 
+def normalize_timestamp_for_hash(timestamp_value) -> str:
+    """
+    Normaliza un timestamp a formato estándar para el hash.
+    Maneja timestamps Unix, datetime strings, y objetos datetime.
+    
+    Args:
+        timestamp_value: Valor del timestamp (puede ser int, str, datetime, o None)
+        
+    Returns:
+        str: Timestamp normalizado como string Unix epoch, o 'UNKNOWN'
+    """
+    if pd.isna(timestamp_value) or timestamp_value is None or timestamp_value == '':
+        return 'UNKNOWN'
+    
+    try:
+        # Si ya es un timestamp Unix (int), convertir a string
+        if isinstance(timestamp_value, (int, float)):
+            return str(int(timestamp_value))
+        
+        # Si es string que parece timestamp Unix
+        if isinstance(timestamp_value, str) and timestamp_value.isdigit():
+            return timestamp_value
+        
+        # Si es datetime o string de fecha, convertir a Unix timestamp
+        if isinstance(timestamp_value, (pd.Timestamp, datetime)):
+            return str(int(timestamp_value.timestamp()))
+        
+        # Intentar parsear como fecha string
+        dt = pd.to_datetime(timestamp_value, errors='coerce')
+        if pd.notna(dt):
+            return str(int(dt.timestamp()))
+        
+        # Si todo falla, usar el valor como string
+        return str(timestamp_value)
+        
+    except Exception as e:
+        logger.warning(f"Could not normalize timestamp {timestamp_value}: {e}")
+        return 'UNKNOWN'
+
 
 def create_unique_comment_hash(row: pd.Series) -> str:
     """
     Crea un hash único para cada comentario basado en múltiples campos.
-    Versión mejorada con normalización robusta.
+    Versión mejorada con normalización robusta de timestamps.
     
     Args:
         row: Fila del DataFrame con datos del comentario
@@ -635,28 +674,28 @@ def create_unique_comment_hash(row: pd.Series) -> str:
     # Verificar si es una entrada de registro (sin comentario real)
     comment_text = row.get('comment_text', '')
     if pd.isna(comment_text) or str(comment_text).strip() == '':
-        # Para entradas de registro, usar post_number y extraction_status
-        post_number = row.get('post_number', 'UNKNOWN')
-        extraction_status = row.get('extraction_status', 'UNKNOWN')
-        return f"REGISTRY_{post_number}_{extraction_status}"
+        # Para entradas de registro, usar post_url y platform
+        post_url = str(row.get('post_url', '')).strip()
+        extraction_status = str(row.get('extraction_status', 'UNKNOWN'))
+        return f"REGISTRY_{platform}_{extraction_status}_{hashlib.md5(post_url.encode('utf-8')).hexdigest()}"
     
     # Para comentarios reales, crear hash basado en campos clave
-    # Normalizar todos los campos a string y manejar valores nulos
     post_url = str(row.get('post_url', '')).strip()
-    author_name = str(row.get('author_name', '')).strip().lower()
+    author_name = str(row.get('author_name', '')).strip().lower() if pd.notna(row.get('author_name')) else 'anonymous'
     comment_text_clean = str(comment_text).strip()
-    created_time = str(row.get('created_time', ''))
     
-    # Crear string único con campos normalizados
+    # Normalizar el timestamp para que sea consistente
+    created_time_normalized = normalize_timestamp_for_hash(row.get('created_time'))
+    
+    # Crear string único con campos normalizados (CON created_time normalizado)
     unique_string = (
         f"{platform}|{post_url}|{author_name}|"
-        f"{comment_text_clean}|{created_time}"
+        f"{comment_text_clean}|{created_time_normalized}"
     )
     
     # Generar hash MD5
     return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
-
-
+    
 def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normaliza los datos existentes para asegurar consistencia.
@@ -837,14 +876,15 @@ def save_to_excel(
             
             # Resumen por posts (solo si hay datos)
             if not df.empty and 'post_number' in df.columns:
-                # Asegurar que post_number sea int
+                # Asegurar que post_number sea int y likes_count sea numeric
                 df_copy = df.copy()
                 df_copy['post_number'] = pd.to_numeric(df_copy['post_number'], errors='coerce')
+                df_copy['likes_count'] = pd.to_numeric(df_copy['likes_count'], errors='coerce').fillna(0).astype(int)
                 
                 # Resumen general - CORREGIDO
                 summary = df_copy.groupby(['post_number', 'platform', 'post_url'], dropna=False).agg(
-                    Total_Comentarios=('comment_text', lambda x: int(x.notna().sum())),  # Forzar a int
-                    Total_Likes=('likes_count', lambda x: int(x.sum()) if x.notna().any() else 0),
+                    Total_Comentarios=('comment_text', lambda x: int(x.notna().sum())),
+                    Total_Likes=('likes_count', 'sum'),  # Ahora es seguro sumar
                     Primera_Extraccion=(
                         'created_time_processed', 
                         lambda x: x.min() if x.notna().any() else None
@@ -888,7 +928,7 @@ def save_to_excel(
         return True
         
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}", exc_info=True)  # Agregar traceback
+        logger.error(f"Error saving Excel file: {e}", exc_info=True)
         return False
 
 def load_existing_comments(filename: str) -> pd.DataFrame:
@@ -1146,5 +1186,6 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
