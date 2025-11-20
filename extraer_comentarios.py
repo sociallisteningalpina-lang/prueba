@@ -659,8 +659,8 @@ def normalize_timestamp_for_hash(timestamp_value) -> str:
 
 def create_unique_comment_hash(row: pd.Series) -> str:
     """
-    Crea un hash único para cada comentario basado en múltiples campos.
-    Versión mejorada con normalización robusta de timestamps.
+    Crea un hash único para cada comentario basado en campos CONFIABLES.
+    NO incluye author_name porque puede ser inconsistente entre extracciones.
     
     Args:
         row: Fila del DataFrame con datos del comentario
@@ -679,17 +679,16 @@ def create_unique_comment_hash(row: pd.Series) -> str:
         extraction_status = str(row.get('extraction_status', 'UNKNOWN'))
         return f"REGISTRY_{platform}_{extraction_status}_{hashlib.md5(post_url.encode('utf-8')).hexdigest()}"
     
-    # Para comentarios reales, crear hash basado en campos clave
+    # Para comentarios reales, crear hash basado SOLO en campos confiables
     post_url = str(row.get('post_url', '')).strip()
-    author_name = str(row.get('author_name', '')).strip().lower() if pd.notna(row.get('author_name')) else 'anonymous'
     comment_text_clean = str(comment_text).strip()
     
     # Normalizar el timestamp para que sea consistente
     created_time_normalized = normalize_timestamp_for_hash(row.get('created_time'))
     
-    # Crear string único con campos normalizados (CON created_time normalizado)
+    # Crear string único SIN author_name (campo no confiable)
     unique_string = (
-        f"{platform}|{post_url}|{author_name}|"
+        f"{platform}|{post_url}|"
         f"{comment_text_clean}|{created_time_normalized}"
     )
     
@@ -743,21 +742,13 @@ def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
     logger.info(f"Normalized {len(df)} existing rows")
     return df
 
-
 def merge_comments(
     df_existing: pd.DataFrame, 
     df_new: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Combina comentarios existentes con nuevos, evitando duplicados reales.
-    Versión mejorada con mejor detección de duplicados.
-    
-    Args:
-        df_existing: DataFrame con comentarios existentes
-        df_new: DataFrame con comentarios nuevos
-        
-    Returns:
-        pd.DataFrame: DataFrame combinado sin duplicados
+    Versión con DEBUGGING DETALLADO.
     """
     if df_existing.empty:
         return df_new
@@ -770,12 +761,35 @@ def merge_comments(
     df_existing = normalize_existing_data(df_existing)
     
     # Crear hashes únicos para identificación
+    logger.info("Creating hashes for existing data...")
     df_existing['_comment_hash'] = df_existing.apply(
         create_unique_comment_hash, axis=1
     )
+    
+    logger.info("Creating hashes for new data...")
     df_new['_comment_hash'] = df_new.apply(
         create_unique_comment_hash, axis=1
     )
+    
+    # DEBUG: Mostrar algunos hashes de ejemplo
+    logger.info("=== HASH DEBUGGING ===")
+    logger.info("Sample existing hashes:")
+    for idx in range(min(3, len(df_existing))):
+        row = df_existing.iloc[idx]
+        logger.info(f"  Row {idx}: platform={row.get('platform')}, "
+                   f"author={row.get('author_name')}, "
+                   f"text={str(row.get('comment_text'))[:30]}..., "
+                   f"created_time={row.get('created_time')}, "
+                   f"hash={row.get('_comment_hash')}")
+    
+    logger.info("Sample new hashes:")
+    for idx in range(min(3, len(df_new))):
+        row = df_new.iloc[idx]
+        logger.info(f"  Row {idx}: platform={row.get('platform')}, "
+                   f"author={row.get('author_name')}, "
+                   f"text={str(row.get('comment_text'))[:30]}..., "
+                   f"created_time={row.get('created_time')}, "
+                   f"hash={row.get('_comment_hash')}")
     
     # Encontrar comentarios verdaderamente nuevos
     existing_hashes = set(df_existing['_comment_hash'])
@@ -785,13 +799,20 @@ def merge_comments(
     logger.info(f"Found {len(df_truly_new)} truly new entries")
     logger.info(f"Filtered out {duplicates_filtered} duplicate entries")
     
+    # DEBUG: Mostrar qué se consideró duplicado
+    if duplicates_filtered > 0:
+        df_duplicates = df_new[df_new['_comment_hash'].isin(existing_hashes)]
+        logger.info(f"Duplicate entries detected:")
+        for idx in range(min(3, len(df_duplicates))):
+            row = df_duplicates.iloc[idx]
+            logger.info(f"  DUP: {str(row.get('comment_text'))[:50]}... | hash={row.get('_comment_hash')}")
+    
     # Para las URLs que tienen nuevos comentarios, actualizar el extraction_status
     urls_with_new_comments = set(
         df_truly_new[df_truly_new['comment_text'].notna()]['post_url'].unique()
     )
     
     if urls_with_new_comments:
-        # Marcar las entradas de registro antiguas para estas URLs
         mask_to_remove = (
             df_existing['comment_text'].isna() & 
             df_existing['post_url'].isin(urls_with_new_comments) &
@@ -1189,6 +1210,7 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
 
