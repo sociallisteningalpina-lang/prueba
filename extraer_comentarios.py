@@ -813,6 +813,7 @@ def merge_comments(
 def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Procesa las columnas de fecha/hora, creando campos adicionales.
+    IMPORTANTE: Preserva created_time original para el hash.
     
     Args:
         df: DataFrame con columna 'created_time'
@@ -823,6 +824,7 @@ def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
     if 'created_time' not in df.columns:
         return df
     
+    # CRÍTICO: NO modificar created_time, crear una copia
     # Intentar convertir como timestamp Unix primero
     df['created_time_processed'] = pd.to_datetime(
         df['created_time'], 
@@ -833,11 +835,12 @@ def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
     
     # Para los que fallaron, intentar como string de fecha
     mask = df['created_time_processed'].isna()
-    df.loc[mask, 'created_time_processed'] = pd.to_datetime(
-        df.loc[mask, 'created_time'], 
-        errors='coerce', 
-        utc=True
-    )
+    if mask.any():
+        df.loc[mask, 'created_time_processed'] = pd.to_datetime(
+            df.loc[mask, 'created_time'], 
+            errors='coerce', 
+            utc=True
+        )
     
     # Remover timezone y crear campos adicionales
     if df['created_time_processed'].notna().any():
@@ -1133,7 +1136,7 @@ def run_extraction():
         # Organizar columnas
         final_columns = [
             'post_number', 'platform', 'campaign_name', 'post_url', 
-            'post_url_original', 'author_name', 'comment_text', 
+            'post_url_original', 'author_name', 'comment_text', 'created_time',
             'created_time_processed', 'fecha_comentario', 'hora_comentario', 
             'likes_count', 'replies_count', 'is_reply', 'author_url', 
             'extraction_status', 'created_time_raw'
@@ -1186,6 +1189,7 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
 
