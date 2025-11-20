@@ -814,7 +814,6 @@ def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
 # ============================================================================
 # FUNCIONES DE PERSISTENCIA
 # ============================================================================
-
 def save_to_excel(
     df: pd.DataFrame, 
     filename: str, 
@@ -836,12 +835,16 @@ def save_to_excel(
             # Hoja principal de comentarios
             df.to_excel(writer, sheet_name='Comentarios', index=False)
             
-            # Resumen por posts
+            # Resumen por posts (solo si hay datos)
             if not df.empty and 'post_number' in df.columns:
-                # Resumen general
-                summary = df.groupby(['post_number', 'platform', 'post_url']).agg(
-                    Total_Comentarios=('comment_text', lambda x: x.notna().sum()),
-                    Total_Likes=('likes_count', 'sum'),
+                # Asegurar que post_number sea int
+                df_copy = df.copy()
+                df_copy['post_number'] = pd.to_numeric(df_copy['post_number'], errors='coerce')
+                
+                # Resumen general - CORREGIDO
+                summary = df_copy.groupby(['post_number', 'platform', 'post_url'], dropna=False).agg(
+                    Total_Comentarios=('comment_text', lambda x: int(x.notna().sum())),  # Forzar a int
+                    Total_Likes=('likes_count', lambda x: int(x.sum()) if x.notna().any() else 0),
                     Primera_Extraccion=(
                         'created_time_processed', 
                         lambda x: x.min() if x.notna().any() else None
@@ -851,17 +854,21 @@ def save_to_excel(
                         lambda x: x.max() if x.notna().any() else None
                     )
                 ).reset_index()
+                
                 summary = summary.sort_values('post_number')
                 summary.to_excel(writer, sheet_name='Resumen_Posts', index=False)
                 
-                # Estadísticas por plataforma
-                platform_stats = df[df['comment_text'].notna()].groupby('platform').agg(
-                    Total_Posts=('post_url', 'nunique'),
-                    Total_Comentarios=('comment_text', 'count'),
-                    Promedio_Likes=('likes_count', 'mean'),
-                    Total_Likes=('likes_count', 'sum')
-                ).round(2).reset_index()
-                platform_stats.to_excel(writer, sheet_name='Stats_Plataforma', index=False)
+                # Estadísticas por plataforma - CORREGIDO
+                df_with_comments = df_copy[df_copy['comment_text'].notna()].copy()
+                
+                if not df_with_comments.empty:
+                    platform_stats = df_with_comments.groupby('platform').agg(
+                        Total_Posts=('post_url', 'nunique'),
+                        Total_Comentarios=('comment_text', 'count'),
+                        Promedio_Likes=('likes_count', 'mean'),
+                        Total_Likes=('likes_count', 'sum')
+                    ).round(2).reset_index()
+                    platform_stats.to_excel(writer, sheet_name='Stats_Plataforma', index=False)
                 
                 # URLs con problemas
                 if scraper and scraper.failed_urls:
@@ -881,9 +888,8 @@ def save_to_excel(
         return True
         
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}")
+        logger.error(f"Error saving Excel file: {e}", exc_info=True)  # Agregar traceback
         return False
-
 
 def load_existing_comments(filename: str) -> pd.DataFrame:
     """
@@ -1140,4 +1146,5 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
