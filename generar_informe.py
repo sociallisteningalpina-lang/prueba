@@ -183,8 +183,12 @@ def run_report_generation():
             <div class="card charts-section">
                 <h2 class="section-title">Análisis General</h2>
                 <div class="charts-grid">
-                    <div class="chart-container"><canvas id="postCountChart"></canvas></div><div class="chart-container"><canvas id="sentimentChart"></canvas></div><div class="chart-container"><canvas id="topicsChart"></canvas></div>
-                    <div class="chart-container full-width"><canvas id="sentimentByTopicChart"></canvas></div><div class="chart-container full-width"><canvas id="dailyChart"></canvas></div><div class="chart-container full-width"><canvas id="hourlyChart"></canvas></div>
+                    <div class="chart-container"><canvas id="postCountChart"></canvas></div>
+                    <div class="chart-container"><canvas id="sentimentChart"></canvas></div>
+                    <div class="chart-container"><canvas id="topicsChart"></canvas></div>
+                    <div class="chart-container full-width"><canvas id="sentimentByTopicChart"></canvas></div>
+                    <div class="chart-container full-width"><canvas id="dailyChart"></canvas></div>
+                    <div class="chart-container full-width"><canvas id="hourlyChart"></canvas></div>
                 </div>
             </div>
             
@@ -219,7 +223,7 @@ def run_report_generation():
                 Object.assign(charts, {{
                     postCount: new Chart(document.getElementById('postCountChart'), {{ type: 'doughnut', options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ title: {{ display: true, text: 'Distribución de Pautas por Red Social' }} }} }} }}),
                     sentiment: new Chart(document.getElementById('sentimentChart'), {{ type: 'doughnut', options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ title: {{ display: true, text: 'Distribución de Sentimientos' }} }} }} }}),
-                    topics: new Chart(document.getElementById('topicsChart'), {{ type: 'bar', options: {{ responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: {{ legend: {{ display: false }}, title: {{ display: true, text: 'Temas Principales' }} }} }} }}),
+                    topics: new Chart(document.getElementById('topicsChart'), {{ type: 'doughnut', options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ title: {{ display: true, text: 'Distribución por Temas' }} }} }} }}),
                     sentimentByTopic: new Chart(document.getElementById('sentimentByTopicChart'), {{ type: 'bar', options: {{ responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: {{ x: {{ stacked: true }}, y: {{ stacked: true }} }}, plugins: {{ title: {{ display: true, text: 'Sentimiento por Tema' }} }} }} }}),
                     daily: new Chart(document.getElementById('dailyChart'), {{ type: 'bar', options: {{ responsive: true, maintainAspectRatio: false, scales: {{ x: {{ stacked: true }}, y: {{ stacked: true }} }}, plugins: {{ title: {{ display: true, text: 'Volumen de Comentarios por Día' }} }} }} }}),
                     hourly: new Chart(document.getElementById('hourlyChart'), {{ type: 'bar', options: {{ responsive: true, maintainAspectRatio: false, scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, position: 'left', title: {{ display: true, text: 'Comentarios por Hora' }} }}, y1: {{ position: 'right', grid: {{ drawOnChartArea: false }}, title: {{ display: true, text: 'Total Acumulado' }} }} }}, plugins: {{ title: {{ display: true, text: 'Volumen de Comentarios por Hora' }} }} }} }})
@@ -238,8 +242,7 @@ def run_report_generation():
                     // Filtrar pautas por plataforma
                     let postsToShow = (selectedPlatform === 'Todas') ? allPostsData : allPostsData.filter(p => p.platform === selectedPlatform);
                     
-                    // NUEVO: Filtrar pautas por tema
-                    // Solo mostrar pautas que tienen comentarios del tema seleccionado
+                    // Filtrar pautas por tema
                     if (selectedTopic !== 'Todos') {{
                         const urlsWithTopic = new Set(
                             allData.filter(d => d.topic === selectedTopic).map(d => d.post_url)
@@ -282,7 +285,6 @@ def run_report_generation():
                     tableHTML += '</th><th>Enlace</th></tr>';
                     
                     paginatedPosts.forEach(p => {{
-                        // Usar post_url_original para el link (o post_url como fallback)
                         const linkUrl = p.post_url_original || p.post_url;
                         tableHTML += `<tr><td>${{p.post_label}}</td><td><b>${{p.comment_count}}</b></td><td><a href="${{linkUrl}}" target="_blank">Ver Pauta</a></td></tr>`;
                     }});
@@ -316,7 +318,7 @@ def run_report_generation():
                         postsToShow = allPostsData.filter(p => p.platform === selectedPlatform);
                     }}
 
-                    // NUEVO: Filtrar por tema
+                    // Filtrar por tema
                     if (selectedTopic !== 'Todos') {{
                         filteredData = filteredData.filter(d => d.topic === selectedTopic);
                     }}
@@ -412,23 +414,36 @@ def run_report_generation():
                 }};
 
                 const updateCharts = (postsData, filteredData) => {{ 
+                    // Gráfico de pautas por plataforma
                     const postCounts = postsData.reduce((acc, curr) => {{ acc[curr.platform] = (acc[curr.platform] || 0) + 1; return acc; }}, {{}}); 
                     const postCountLabels = Object.keys(postCounts); 
                     charts.postCount.data.labels = postCountLabels; 
                     charts.postCount.data.datasets = [{{ data: postCountLabels.map(p => postCounts[p]), backgroundColor: ['#007bff', '#6f42c1', '#dc3545', '#ffc107', '#28a745'] }}]; 
                     charts.postCount.update(); 
                     
+                    // Gráfico de sentimientos
                     const sentimentCounts = filteredData.reduce((acc, curr) => {{ acc[curr.sentiment] = (acc[curr.sentiment] || 0) + 1; return acc; }}, {{}}); 
                     charts.sentiment.data.labels = ['Positivo', 'Negativo', 'Neutro']; 
                     charts.sentiment.data.datasets = [{{ data: [sentimentCounts['Positivo']||0, sentimentCounts['Negativo']||0, sentimentCounts['Neutro']||0], backgroundColor: ['#28a745', '#dc3545', '#ffc107'] }}]; 
                     charts.sentiment.update(); 
                     
+                    // NUEVO: Gráfico de pastel por temas
                     const topicCounts = filteredData.reduce((acc, curr) => {{ acc[curr.topic] = (acc[curr.topic] || 0) + 1; return acc; }}, {{}}); 
                     const sortedTopics = Object.entries(topicCounts).sort((a, b) => b[1] - a[1]); 
-                    charts.topics.data.labels = sortedTopics.map(d => d[0]); 
-                    charts.topics.data.datasets = [{{ label: 'Comentarios', data: sortedTopics.map(d => d[1]), backgroundColor: '#3498db' }}]; 
+                    const topicLabels = sortedTopics.map(d => d[0]);
+                    const topicData = sortedTopics.map(d => d[1]);
+                    
+                    // Paleta de colores para temas
+                    const topicColors = ['#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c', '#34495e', '#95a5a6', '#e67e22', '#16a085', '#c0392b'];
+                    
+                    charts.topics.data.labels = topicLabels; 
+                    charts.topics.data.datasets = [{{ 
+                        data: topicData, 
+                        backgroundColor: topicColors.slice(0, topicLabels.length) 
+                    }}]; 
                     charts.topics.update(); 
                     
+                    // Sentimiento por tema (gráfico de barras)
                     const sbtCounts = filteredData.reduce((acc, curr) => {{ if (!acc[curr.topic]) acc[curr.topic] = {{ Positivo: 0, Negativo: 0, Neutro: 0 }}; acc[curr.topic][curr.sentiment]++; return acc; }}, {{}}); 
                     const sbtLabels = Object.keys(sbtCounts).sort((a,b) => (sbtCounts[b].Positivo + sbtCounts[b].Negativo + sbtCounts[b].Neutro) - (sbtCounts[a].Positivo + sbtCounts[a].Negativo + sbtCounts[a].Neutro)); 
                     charts.sentimentByTopic.data.labels = sbtLabels; 
@@ -439,6 +454,7 @@ def run_report_generation():
                     ]; 
                     charts.sentimentByTopic.update(); 
                     
+                    // Volumen diario
                     const dailyCounts = filteredData.reduce((acc, curr) => {{ const day = curr.date.substring(0, 10); if (!acc[day]) {{ acc[day] = {{ Positivo: 0, Negativo: 0, Neutro: 0 }}; }} acc[day][curr.sentiment]++; return acc; }}, {{}}); 
                     const sortedDays = Object.keys(dailyCounts).sort(); 
                     charts.daily.data.labels = sortedDays.map(d => new Date(d+'T00:00:00').toLocaleDateString('es-CO', {{ year: 'numeric', month: 'short', day: 'numeric' }})); 
@@ -449,6 +465,7 @@ def run_report_generation():
                     ]; 
                     charts.daily.update(); 
                     
+                    // Volumen por hora
                     const hourlyCounts = filteredData.reduce((acc, curr) => {{ const hour = curr.date.substring(0, 13) + ':00:00'; if (!acc[hour]) acc[hour] = {{ Positivo: 0, Negativo: 0, Neutro: 0, Total: 0 }}; acc[hour][curr.sentiment]++; acc[hour].Total++; return acc; }}, {{}}); 
                     const sortedHours = Object.keys(hourlyCounts).sort(); 
                     let cumulative = 0; 
