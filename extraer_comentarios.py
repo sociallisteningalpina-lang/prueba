@@ -328,7 +328,7 @@ class SocialMediaScraper:
                 )
                 return []
             
-            items = self.client.dataset(run["defaultDatasetId"]).list_items().items
+            items = self.client.dataset(run["defaultDatasetId"]).list_items(limit=max_comments).items
             logger.info(f"Extraction complete: {len(items)} items found.")
             
             return self._process_facebook_results(items, url, post_number, campaign_info)
@@ -363,7 +363,7 @@ class SocialMediaScraper:
                 )
                 return []
             
-            items = self.client.dataset(run["defaultDatasetId"]).list_items().items
+            items = self.client.dataset(run["defaultDatasetId"]).list_items(limit=max_comments).items
             logger.info(f"Extraction complete: {len(items)} items found.")
             
             return self._process_instagram_results(items, url, post_number, campaign_info)
@@ -399,7 +399,7 @@ class SocialMediaScraper:
                 )
                 return []
             
-            items = self.client.dataset(run["defaultDatasetId"]).list_items().items
+            items = self.client.dataset(run["defaultDatasetId"]).list_items(limit=max_comments).items
             logger.info(f"Extraction complete: {len(items)} comments found.")
             
             return self._process_tiktok_results(items, url, post_number, campaign_info)
@@ -1210,6 +1210,7 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
 
