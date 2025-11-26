@@ -300,7 +300,7 @@ class SocialMediaScraper:
         self.extraction_stats['failed'] += 1
         logger.error(f"All {max_retries} attempts failed for URL: {url}")
         return []
-    
+
     def scrape_facebook_comments(
         self, 
         url: str, 
@@ -308,35 +308,35 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-    """Extrae comentarios de Facebook"""
+        """Extrae comentarios de Facebook"""
         try:
-          logger.info(f"Processing Facebook Post {post_number}: {url}")
-        
+            logger.info(f"Processing Facebook Post {post_number}: {url}")
+            
             run_input = {
                 "startUrls": [{"url": self.clean_url(url)}], 
                 "maxComments": max_comments
             }
-        
+            
             run = self.client.actor("apify/facebook-comments-scraper").call(
-             run_input=run_input
+                run_input=run_input
             )
             run_status = self._wait_for_run_finish(run)
-        
+            
             if not run_status or run_status["status"] != "SUCCEEDED":
                 logger.error(
                     f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
                 )
                 return []
-        
-        # ✅ CORRECCIÓN: Usar list_items() correctamente
+            
+            # ✅ CORRECCIÓN: Usar list_items() correctamente
             dataset = self.client.dataset(run["defaultDatasetId"])
             items_response = dataset.list_items(clean=True, limit=max_comments)
             items = items_response.items
-        
+            
             logger.info(f"Extraction complete: {len(items)} items found.")
-        
+            
             return self._process_facebook_results(items, url, post_number, campaign_info)
-        
+            
         except Exception as e:
             logger.error(f"Error in scrape_facebook_comments: {e}")
             raise
@@ -348,37 +348,37 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-    """Extrae comentarios de Instagram"""
-    try:
-        logger.info(f"Processing Instagram Post {post_number}: {url}")
-        
-        run_input = {
-            "directUrls": [url], 
-            "resultsType": "comments", 
-            "resultsLimit": max_comments
-        }
-        
-        run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
-        run_status = self._wait_for_run_finish(run)
-        
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"Instagram extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
-            )
-            return []
-        
-        # ✅ CORRECCIÓN: Usar list_items() correctamente
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        items_response = dataset.list_items(clean=True, limit=max_comments)
-        items = items_response.items
-        
-        logger.info(f"Extraction complete: {len(items)} items found.")
-        
-        return self._process_instagram_results(items, url, post_number, campaign_info)
-        
-    except Exception as e:
-        logger.error(f"Error in scrape_instagram_comments: {e}")
-        raise
+        """Extrae comentarios de Instagram"""
+        try:
+            logger.info(f"Processing Instagram Post {post_number}: {url}")
+            
+            run_input = {
+                "directUrls": [url], 
+                "resultsType": "comments", 
+                "resultsLimit": max_comments
+            }
+            
+            run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
+            run_status = self._wait_for_run_finish(run)
+            
+            if not run_status or run_status["status"] != "SUCCEEDED":
+                logger.error(
+                    f"Instagram extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+                )
+                return []
+            
+            # ✅ CORRECCIÓN: Usar list_items() correctamente
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items = items_response.items
+            
+            logger.info(f"Extraction complete: {len(items)} items found.")
+            
+            return self._process_instagram_results(items, url, post_number, campaign_info)
+            
+        except Exception as e:
+            logger.error(f"Error in scrape_instagram_comments: {e}")
+            raise
 
     def scrape_tiktok_comments(
         self, 
@@ -387,35 +387,35 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-    """Extrae comentarios de TikTok"""
+        """Extrae comentarios de TikTok"""
         try:
             logger.info(f"Processing TikTok Post {post_number}: {url}")
-        
+            
             run_input = {
                 "postURLs": [self.clean_url(url)], 
                 "maxCommentsPerPost": max_comments
             }
-        
+            
             run = self.client.actor("clockworks/tiktok-comments-scraper").call(
                 run_input=run_input
             )
             run_status = self._wait_for_run_finish(run)
-        
+            
             if not run_status or run_status["status"] != "SUCCEEDED":
                 logger.error(
                     f"TikTok extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
                 )
                 return []
-        
-        # ✅ CORRECCIÓN: Usar list_items() correctamente
+            
+            # ✅ CORRECCIÓN: Usar list_items() correctamente
             dataset = self.client.dataset(run["defaultDatasetId"])
             items_response = dataset.list_items(clean=True, limit=max_comments)
             items = items_response.items
-        
+            
             logger.info(f"Extraction complete: {len(items)} comments found.")
-        
+            
             return self._process_tiktok_results(items, url, post_number, campaign_info)
-        
+            
         except Exception as e:
             logger.error(f"Error in scrape_tiktok_comments: {e}")
             raise
@@ -629,6 +629,7 @@ def create_failed_registry_entry(
         'extraction_status': 'FAILED'
     }
 
+
 def normalize_timestamp_for_hash(timestamp_value) -> str:
     """
     Normaliza un timestamp a formato estándar para el hash.
@@ -706,7 +707,8 @@ def create_unique_comment_hash(row: pd.Series) -> str:
     
     # Generar hash MD5
     return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
-    
+
+
 def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normaliza los datos existentes para asegurar consistencia.
@@ -753,6 +755,7 @@ def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
     
     logger.info(f"Normalized {len(df)} existing rows")
     return df
+
 
 def merge_comments(
     df_existing: pd.DataFrame, 
@@ -889,6 +892,7 @@ def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
 # ============================================================================
 # FUNCIONES DE PERSISTENCIA
 # ============================================================================
+
 def save_to_excel(
     df: pd.DataFrame, 
     filename: str, 
@@ -917,10 +921,10 @@ def save_to_excel(
                 df_copy['post_number'] = pd.to_numeric(df_copy['post_number'], errors='coerce')
                 df_copy['likes_count'] = pd.to_numeric(df_copy['likes_count'], errors='coerce').fillna(0).astype(int)
                 
-                # Resumen general - CORREGIDO
+                # Resumen general
                 summary = df_copy.groupby(['post_number', 'platform', 'post_url'], dropna=False).agg(
                     Total_Comentarios=('comment_text', lambda x: int(x.notna().sum())),
-                    Total_Likes=('likes_count', 'sum'),  # Ahora es seguro sumar
+                    Total_Likes=('likes_count', 'sum'),
                     Primera_Extraccion=(
                         'created_time_processed', 
                         lambda x: x.min() if x.notna().any() else None
@@ -934,7 +938,7 @@ def save_to_excel(
                 summary = summary.sort_values('post_number')
                 summary.to_excel(writer, sheet_name='Resumen_Posts', index=False)
                 
-                # Estadísticas por plataforma - CORREGIDO
+                # Estadísticas por plataforma
                 df_with_comments = df_copy[df_copy['comment_text'].notna()].copy()
                 
                 if not df_with_comments.empty:
@@ -966,6 +970,7 @@ def save_to_excel(
     except Exception as e:
         logger.error(f"Error saving Excel file: {e}", exc_info=True)
         return False
+
 
 def load_existing_comments(filename: str) -> pd.DataFrame:
     """
@@ -1222,17 +1227,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
