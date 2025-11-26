@@ -237,16 +237,16 @@ class SocialMediaScraper:
             time.sleep(10)
 
     def _deduplicate_items(self, items: List[dict], platform: str) -> List[dict]:
-    """
-    Elimina duplicados de los items devueltos por Apify.
+        """
+        Elimina duplicados de los items devueltos por Apify.
     
-    Args:
+        Args:
         items: Lista de items de Apify
         platform: Nombre de la plataforma
         
-    Returns:
+        Returns:
         List[dict]: Items únicos
-    """
+        """
         if not items:
             return items
     
@@ -1300,4 +1300,5 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
