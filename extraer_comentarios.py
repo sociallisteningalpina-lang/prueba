@@ -302,52 +302,52 @@ class SocialMediaScraper:
         return []
     
     def scrape_facebook_comments(
-    self, 
-    url: str, 
-    max_comments: int = 500, 
-    campaign_info: dict = None, 
-    post_number: int = 1
-) -> List[dict]:
+        self, 
+        url: str, 
+        max_comments: int = 500, 
+        campaign_info: dict = None, 
+        post_number: int = 1
+    ) -> List[dict]:
     """Extrae comentarios de Facebook"""
-    try:
-        logger.info(f"Processing Facebook Post {post_number}: {url}")
+        try:
+          logger.info(f"Processing Facebook Post {post_number}: {url}")
         
-        run_input = {
-            "startUrls": [{"url": self.clean_url(url)}], 
-            "maxComments": max_comments
-        }
+            run_input = {
+                "startUrls": [{"url": self.clean_url(url)}], 
+                "maxComments": max_comments
+            }
         
-        run = self.client.actor("apify/facebook-comments-scraper").call(
-            run_input=run_input
-        )
-        run_status = self._wait_for_run_finish(run)
-        
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+            run = self.client.actor("apify/facebook-comments-scraper").call(
+             run_input=run_input
             )
-            return []
+            run_status = self._wait_for_run_finish(run)
+        
+            if not run_status or run_status["status"] != "SUCCEEDED":
+                logger.error(
+                    f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+                )
+                return []
         
         # ✅ CORRECCIÓN: Usar list_items() correctamente
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        items_response = dataset.list_items(clean=True, limit=max_comments)
-        items = items_response.items
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items = items_response.items
         
-        logger.info(f"Extraction complete: {len(items)} items found.")
+            logger.info(f"Extraction complete: {len(items)} items found.")
         
-        return self._process_facebook_results(items, url, post_number, campaign_info)
+            return self._process_facebook_results(items, url, post_number, campaign_info)
         
-    except Exception as e:
-        logger.error(f"Error in scrape_facebook_comments: {e}")
-        raise
+        except Exception as e:
+            logger.error(f"Error in scrape_facebook_comments: {e}")
+            raise
 
     def scrape_instagram_comments(
-    self, 
-    url: str, 
-    max_comments: int = 500, 
-    campaign_info: dict = None, 
-    post_number: int = 1
-) -> List[dict]:
+        self, 
+        url: str, 
+        max_comments: int = 500, 
+        campaign_info: dict = None, 
+        post_number: int = 1
+    ) -> List[dict]:
     """Extrae comentarios de Instagram"""
     try:
         logger.info(f"Processing Instagram Post {post_number}: {url}")
@@ -381,44 +381,44 @@ class SocialMediaScraper:
         raise
 
     def scrape_tiktok_comments(
-    self, 
-    url: str, 
-    max_comments: int = 500, 
-    campaign_info: dict = None, 
-    post_number: int = 1
-) -> List[dict]:
+        self, 
+        url: str, 
+        max_comments: int = 500, 
+        campaign_info: dict = None, 
+        post_number: int = 1
+    ) -> List[dict]:
     """Extrae comentarios de TikTok"""
-    try:
-        logger.info(f"Processing TikTok Post {post_number}: {url}")
+        try:
+            logger.info(f"Processing TikTok Post {post_number}: {url}")
         
-        run_input = {
-            "postURLs": [self.clean_url(url)], 
-            "maxCommentsPerPost": max_comments
-        }
+            run_input = {
+                "postURLs": [self.clean_url(url)], 
+                "maxCommentsPerPost": max_comments
+            }
         
-        run = self.client.actor("clockworks/tiktok-comments-scraper").call(
-            run_input=run_input
-        )
-        run_status = self._wait_for_run_finish(run)
-        
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"TikTok extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+            run = self.client.actor("clockworks/tiktok-comments-scraper").call(
+                run_input=run_input
             )
-            return []
+            run_status = self._wait_for_run_finish(run)
+        
+            if not run_status or run_status["status"] != "SUCCEEDED":
+                logger.error(
+                    f"TikTok extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+                )
+                return []
         
         # ✅ CORRECCIÓN: Usar list_items() correctamente
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        items_response = dataset.list_items(clean=True, limit=max_comments)
-        items = items_response.items
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items = items_response.items
         
-        logger.info(f"Extraction complete: {len(items)} comments found.")
+            logger.info(f"Extraction complete: {len(items)} comments found.")
         
-        return self._process_tiktok_results(items, url, post_number, campaign_info)
+            return self._process_tiktok_results(items, url, post_number, campaign_info)
         
-    except Exception as e:
-        logger.error(f"Error in scrape_tiktok_comments: {e}")
-        raise
+        except Exception as e:
+            logger.error(f"Error in scrape_tiktok_comments: {e}")
+            raise
 
     def _process_facebook_results(
         self, 
@@ -1222,6 +1222,7 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
 
