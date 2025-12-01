@@ -119,7 +119,6 @@ def run_report_generation():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Panel Interactivo de Campañas</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{ font-family: 'Arial', sans-serif; background: #f4f7f6; color: #333; }}
@@ -202,6 +201,45 @@ def run_report_generation():
         </div>
 
         <script>
+            // Plugin personalizado para mostrar valores y porcentajes en gráficas circulares
+            const doughnutLabelPlugin = {{
+                id: 'doughnutLabel',
+                afterDatasetsDraw(chart, args, options) {{
+                    const {{ ctx, data }} = chart;
+                    
+                    chart.data.datasets.forEach((dataset, datasetIndex) => {{
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        if (!meta.hidden) {{
+                            meta.data.forEach((element, index) => {{
+                                const value = dataset.data[index];
+                                
+                                // Calcular porcentaje
+                                const total = dataset.data.reduce((acc, val) => acc + val, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                
+                                // Obtener posición del centro del segmento
+                                const {{ x, y }} = element.tooltipPosition();
+                                
+                                // Configurar el texto
+                                ctx.save();
+                                ctx.fillStyle = '#fff';
+                                ctx.font = 'bold 14px Arial';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                
+                                // Dibujar valor
+                                ctx.fillText(value, x, y - 8);
+                                
+                                // Dibujar porcentaje
+                                ctx.fillText(`(${{percentage}}%)`, x, y + 8);
+                                
+                                ctx.restore();
+                            }});
+                        }}
+                    }});
+                }}
+            }};
+            
             document.addEventListener('DOMContentLoaded', () => {{
                 const allData = JSON.parse(document.getElementById('data-store').textContent);
                 const allPostsData = JSON.parse(document.getElementById('posts-data-store').textContent);
@@ -227,72 +265,75 @@ def run_report_generation():
                         data: {{ labels: [], datasets: [{{}}] }},
                         options: {{ 
                             responsive: true, 
-                            maintainAspectRatio: false, 
+                            maintainAspectRatio: false,
                             plugins: {{ 
                                 title: {{ display: true, text: 'Distribución de Pautas por Red Social' }},
                                 legend: {{ display: true, position: 'bottom' }},
-                                datalabels: {{ 
-                                    display: true,
-                                    color: '#fff', 
-                                    font: {{ weight: 'bold', size: 14 }}, 
-                                    formatter: (value, ctx) => {{ 
-                                        if (value === 0) return '';
-                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0); 
-                                        const percentage = ((value / total) * 100).toFixed(1); 
-                                        return value + '\\n(' + percentage + '%)'; 
-                                    }} 
-                                }} 
+                                tooltip: {{ 
+                                    enabled: true,
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            const label = context.label || '';
+                                            const value = context.parsed;
+                                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                            const percentage = ((value / total) * 100).toFixed(1);
+                                            return label + ': ' + value + ' (' + percentage + '%)';
+                                        }}
+                                    }}
+                                }}
                             }} 
                         }},
-                        plugins: [ChartDataLabels]
+                        plugins: [doughnutLabelPlugin]
                     }}),
                     sentiment: new Chart(document.getElementById('sentimentChart'), {{ 
                         type: 'doughnut',
                         data: {{ labels: [], datasets: [{{}}] }},
                         options: {{ 
                             responsive: true, 
-                            maintainAspectRatio: false, 
+                            maintainAspectRatio: false,
                             plugins: {{ 
                                 title: {{ display: true, text: 'Distribución de Sentimientos' }},
                                 legend: {{ display: true, position: 'bottom' }},
-                                datalabels: {{ 
-                                    display: true,
-                                    color: '#fff', 
-                                    font: {{ weight: 'bold', size: 14 }}, 
-                                    formatter: (value, ctx) => {{ 
-                                        if (value === 0) return '';
-                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0); 
-                                        const percentage = ((value / total) * 100).toFixed(1); 
-                                        return value + '\\n(' + percentage + '%)'; 
-                                    }} 
-                                }} 
+                                tooltip: {{ 
+                                    enabled: true,
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            const label = context.label || '';
+                                            const value = context.parsed;
+                                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                            const percentage = ((value / total) * 100).toFixed(1);
+                                            return label + ': ' + value + ' (' + percentage + '%)';
+                                        }}
+                                    }}
+                                }}
                             }} 
                         }},
-                        plugins: [ChartDataLabels]
+                        plugins: [doughnutLabelPlugin]
                     }}),
                     topics: new Chart(document.getElementById('topicsChart'), {{ 
                         type: 'doughnut',
                         data: {{ labels: [], datasets: [{{}}] }},
                         options: {{ 
                             responsive: true, 
-                            maintainAspectRatio: false, 
+                            maintainAspectRatio: false,
                             plugins: {{ 
                                 title: {{ display: true, text: 'Distribución por Temas' }},
                                 legend: {{ display: true, position: 'bottom' }},
-                                datalabels: {{ 
-                                    display: true,
-                                    color: '#fff', 
-                                    font: {{ weight: 'bold', size: 14 }}, 
-                                    formatter: (value, ctx) => {{ 
-                                        if (value === 0) return '';
-                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0); 
-                                        const percentage = ((value / total) * 100).toFixed(1); 
-                                        return value + '\\n(' + percentage + '%)'; 
-                                    }} 
-                                }} 
+                                tooltip: {{ 
+                                    enabled: true,
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            const label = context.label || '';
+                                            const value = context.parsed;
+                                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                            const percentage = ((value / total) * 100).toFixed(1);
+                                            return label + ': ' + value + ' (' + percentage + '%)';
+                                        }}
+                                    }}
+                                }}
                             }} 
                         }},
-                        plugins: [ChartDataLabels]
+                        plugins: [doughnutLabelPlugin]
                     }}),
                     sentimentByTopic: new Chart(document.getElementById('sentimentByTopicChart'), {{ type: 'bar', options: {{ responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: {{ x: {{ stacked: true }}, y: {{ stacked: true }} }}, plugins: {{ title: {{ display: true, text: 'Sentimiento por Tema' }}, datalabels: {{ display: false }} }} }} }}),
                     daily: new Chart(document.getElementById('dailyChart'), {{ type: 'bar', options: {{ responsive: true, maintainAspectRatio: false, scales: {{ x: {{ stacked: true }}, y: {{ stacked: true }} }}, plugins: {{ title: {{ display: true, text: 'Volumen de Comentarios por Día' }}, datalabels: {{ display: false }} }} }} }}),
@@ -585,6 +626,5 @@ def run_report_generation():
 
 if __name__ == "__main__":
     run_report_generation()
-
 
 
