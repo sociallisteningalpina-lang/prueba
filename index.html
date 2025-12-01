@@ -6,6 +6,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Panel Interactivo de Campañas</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: 'Arial', sans-serif; background: #f4f7f6; color: #333; }
@@ -108,12 +109,81 @@
 
                 const charts = {};
                 Object.assign(charts, {
-                    postCount: new Chart(document.getElementById('postCountChart'), { type: 'doughnut', options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Distribución de Pautas por Red Social' } } } }),
-                    sentiment: new Chart(document.getElementById('sentimentChart'), { type: 'doughnut', options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Distribución de Sentimientos' } } } }),
-                    topics: new Chart(document.getElementById('topicsChart'), { type: 'doughnut', options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Distribución por Temas' } } } }),
-                    sentimentByTopic: new Chart(document.getElementById('sentimentByTopicChart'), { type: 'bar', options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { stacked: true }, y: { stacked: true } }, plugins: { title: { display: true, text: 'Sentimiento por Tema' } } } }),
-                    daily: new Chart(document.getElementById('dailyChart'), { type: 'bar', options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } }, plugins: { title: { display: true, text: 'Volumen de Comentarios por Día' } } } }),
-                    hourly: new Chart(document.getElementById('hourlyChart'), { type: 'bar', options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, position: 'left', title: { display: true, text: 'Comentarios por Hora' } }, y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Total Acumulado' } } }, plugins: { title: { display: true, text: 'Volumen de Comentarios por Hora' } } } })
+                    postCount: new Chart(document.getElementById('postCountChart'), { 
+                        type: 'doughnut',
+                        data: { labels: [], datasets: [{}] },
+                        options: { 
+                            responsive: true, 
+                            maintainAspectRatio: false, 
+                            plugins: { 
+                                title: { display: true, text: 'Distribución de Pautas por Red Social' },
+                                legend: { display: true, position: 'bottom' },
+                                datalabels: { 
+                                    display: true,
+                                    color: '#fff', 
+                                    font: { weight: 'bold', size: 14 }, 
+                                    formatter: (value, ctx) => { 
+                                        if (value === 0) return '';
+                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0); 
+                                        const percentage = ((value / total) * 100).toFixed(1); 
+                                        return value + '\n(' + percentage + '%)'; 
+                                    } 
+                                } 
+                            } 
+                        },
+                        plugins: [ChartDataLabels]
+                    }),
+                    sentiment: new Chart(document.getElementById('sentimentChart'), { 
+                        type: 'doughnut',
+                        data: { labels: [], datasets: [{}] },
+                        options: { 
+                            responsive: true, 
+                            maintainAspectRatio: false, 
+                            plugins: { 
+                                title: { display: true, text: 'Distribución de Sentimientos' },
+                                legend: { display: true, position: 'bottom' },
+                                datalabels: { 
+                                    display: true,
+                                    color: '#fff', 
+                                    font: { weight: 'bold', size: 14 }, 
+                                    formatter: (value, ctx) => { 
+                                        if (value === 0) return '';
+                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0); 
+                                        const percentage = ((value / total) * 100).toFixed(1); 
+                                        return value + '\n(' + percentage + '%)'; 
+                                    } 
+                                } 
+                            } 
+                        },
+                        plugins: [ChartDataLabels]
+                    }),
+                    topics: new Chart(document.getElementById('topicsChart'), { 
+                        type: 'doughnut',
+                        data: { labels: [], datasets: [{}] },
+                        options: { 
+                            responsive: true, 
+                            maintainAspectRatio: false, 
+                            plugins: { 
+                                title: { display: true, text: 'Distribución por Temas' },
+                                legend: { display: true, position: 'bottom' },
+                                datalabels: { 
+                                    display: true,
+                                    color: '#fff', 
+                                    font: { weight: 'bold', size: 14 }, 
+                                    formatter: (value, ctx) => { 
+                                        if (value === 0) return '';
+                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0); 
+                                        const percentage = ((value / total) * 100).toFixed(1); 
+                                        return value + '\n(' + percentage + '%)'; 
+                                    } 
+                                } 
+                            } 
+                        },
+                        plugins: [ChartDataLabels]
+                    }),
+                    sentimentByTopic: new Chart(document.getElementById('sentimentByTopicChart'), { type: 'bar', options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { stacked: true }, y: { stacked: true } }, plugins: { title: { display: true, text: 'Sentimiento por Tema' }, datalabels: { display: false } } } }),
+                    daily: new Chart(document.getElementById('dailyChart'), { type: 'bar', options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } }, plugins: { title: { display: true, text: 'Volumen de Comentarios por Día' }, datalabels: { display: false } } } }),
+                    hourly: new Chart(document.getElementById('hourlyChart'), { type: 'bar', options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, position: 'left', title: { display: true, text: 'Comentarios por Hora' } }, y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Total Acumulado' } } }, plugins: { title: { display: true, text: 'Volumen de Comentarios por Hora' }, datalabels: { display: false } } } })
                 });
 
                 let postLinksCurrentPage = 1;
@@ -314,7 +384,7 @@
                     charts.sentiment.data.datasets = [{ data: [sentimentCounts['Positivo']||0, sentimentCounts['Negativo']||0, sentimentCounts['Neutro']||0], backgroundColor: ['#28a745', '#dc3545', '#ffc107'] }]; 
                     charts.sentiment.update(); 
                     
-                    // NUEVO: Gráfico de pastel por temas
+                    // Gráfico de pastel por temas
                     const topicCounts = filteredData.reduce((acc, curr) => { acc[curr.topic] = (acc[curr.topic] || 0) + 1; return acc; }, {}); 
                     const sortedTopics = Object.entries(topicCounts).sort((a, b) => b[1] - a[1]); 
                     const topicLabels = sortedTopics.map(d => d[0]);
