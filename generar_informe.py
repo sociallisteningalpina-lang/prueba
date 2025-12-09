@@ -347,39 +347,56 @@ def run_report_generation():
                 let commentsSentimentFilter = 'Todos';
 
                 const updatePostLinks = () => {{
+                    const startFilter = `${{startDateInput.value}}T${{startTimeInput.value}}:00`;
+                    const endFilter = `${{endDateInput.value}}T${{endTimeInput.value}}:59`;
                     const selectedPlatform = platformFilter.value;
+                    const selectedPost = postFilter.value;
                     const selectedTopic = topicFilter.value;
                     
-                    // Filtrar pautas por plataforma
-                    let postsToShow = (selectedPlatform === 'Todas') ? allPostsData : allPostsData.filter(p => p.platform === selectedPlatform);
+                    // Filtrar comentarios según los criterios activos (fecha, plataforma, pauta, tema)
+                    let filteredComments = allData.filter(d => d.date >= startFilter && d.date <= endFilter);
                     
-                    // Filtrar pautas por tema
-                    if (selectedTopic !== 'Todos') {{
-                        const urlsWithTopic = new Set(
-                            allData.filter(d => d.topic === selectedTopic).map(d => d.post_url)
-                        );
-                        postsToShow = postsToShow.filter(p => urlsWithTopic.has(p.post_url));
-                        
-                        // Recalcular conteos de comentarios solo para el tema seleccionado
-                        postsToShow = postsToShow.map(p => {{
-                            const topicComments = allData.filter(d => d.post_url === p.post_url && d.topic === selectedTopic);
-                            return {{
-                                ...p,
-                                comment_count: topicComments.length,
-                                original_count: p.comment_count
-                            }};
-                        }});
-                        
-                        // Re-ordenar por conteo de comentarios del tema
-                        postsToShow.sort((a, b) => b.comment_count - a.comment_count);
+                    // Aplicar filtros adicionales
+                    if (selectedPost !== 'Todas') {{
+                        filteredComments = filteredComments.filter(d => d.post_url === selectedPost);
+                    }} else if (selectedPlatform !== 'Todas') {{
+                        filteredComments = filteredComments.filter(d => d.platform === selectedPlatform);
                     }}
+                    
+                    if (selectedTopic !== 'Todos') {{
+                        filteredComments = filteredComments.filter(d => d.topic === selectedTopic);
+                    }}
+                    
+                    // Determinar qué pautas mostrar según el filtro de pauta/plataforma
+                    let postsToShow = allPostsData;
+                    if (selectedPost !== 'Todas') {{
+                        postsToShow = allPostsData.filter(p => p.post_url === selectedPost);
+                    }} else if (selectedPlatform !== 'Todas') {{
+                        postsToShow = allPostsData.filter(p => p.platform === selectedPlatform);
+                    }}
+                    
+                    // Recalcular conteos de comentarios basados en los filtros aplicados
+                    postsToShow = postsToShow.map(p => {{
+                        const filteredCount = filteredComments.filter(d => d.post_url === p.post_url).length;
+                        return {{
+                            ...p,
+                            comment_count: filteredCount,
+                            original_count: p.comment_count
+                        }};
+                    }});
+                    
+                    // Filtrar pautas que no tienen comentarios con los filtros aplicados
+                    postsToShow = postsToShow.filter(p => p.comment_count > 0);
+                    
+                    // Re-ordenar por conteo de comentarios filtrados
+                    postsToShow.sort((a, b) => b.comment_count - a.comment_count);
                     
                     const tableDiv = document.getElementById('post-links-table');
                     const paginationDiv = document.getElementById('post-links-pagination');
                     tableDiv.innerHTML = ''; paginationDiv.innerHTML = '';
                     
                     if (postsToShow.length === 0) {{
-                        tableDiv.innerHTML = "<p style='text-align:center; padding:20px;'>No hay pautas con comentarios del tema seleccionado.</p>";
+                        tableDiv.innerHTML = "<p style='text-align:center; padding:20px;'>No hay pautas con comentarios que cumplan los filtros seleccionados.</p>";
                         return;
                     }}
 
@@ -390,8 +407,8 @@ def run_report_generation():
                     const paginatedPosts = postsToShow.slice(startIndex, startIndex + POST_LINKS_PER_PAGE);
 
                     let tableHTML = '<table><tr><th>Pauta</th><th>Comentarios';
-                    if (selectedTopic !== 'Todos') {{
-                        tableHTML += ' (Tema Seleccionado)';
+                    if (selectedTopic !== 'Todos' || startFilter !== `${{startDateInput.min}}T00:00:00` || endFilter !== `${{endDateInput.max}}T23:59:59` || selectedPost !== 'Todas') {{
+                        tableHTML += ' (Filtrados)';
                     }}
                     tableHTML += '</th><th>Enlace</th></tr>';
                     
@@ -602,12 +619,12 @@ def run_report_generation():
                 }};
 
                 platformFilter.addEventListener('change', () => {{ updatePostFilterOptions(); postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }});
-                postFilter.addEventListener('change', updateDashboard);
+                postFilter.addEventListener('change', () => {{ postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }});
                 topicFilter.addEventListener('change', () => {{ postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }});
-                startDateInput.addEventListener('change', updateDashboard); 
-                startTimeInput.addEventListener('change', updateDashboard);
-                endDateInput.addEventListener('change', updateDashboard); 
-                endTimeInput.addEventListener('change', updateDashboard);
+                startDateInput.addEventListener('change', () => {{ postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }}); 
+                startTimeInput.addEventListener('change', () => {{ postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }});
+                endDateInput.addEventListener('change', () => {{ postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }}); 
+                endTimeInput.addEventListener('change', () => {{ postLinksCurrentPage = 1; updatePostLinks(); updateDashboard(); }});
                 
                 updatePostLinks();
                 updateDashboard();
@@ -626,5 +643,3 @@ def run_report_generation():
 
 if __name__ == "__main__":
     run_report_generation()
-
-
