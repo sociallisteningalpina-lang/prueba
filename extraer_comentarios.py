@@ -241,11 +241,11 @@ class SocialMediaScraper:
         Elimina duplicados de los items devueltos por Apify.
     
         Args:
-        items: Lista de items de Apify
-        platform: Nombre de la plataforma
+            items: Lista de items de Apify
+            platform: Nombre de la plataforma
         
         Returns:
-        List[dict]: Items únicos
+            List[dict]: Items únicos
         """
         if not items:
             return items
@@ -362,154 +362,154 @@ class SocialMediaScraper:
         logger.error(f"All {max_retries} attempts failed for URL: {url}")
         return []
 
-   def scrape_facebook_comments(
-    self, 
-    url: str, 
-    max_comments: int = 500, 
-    campaign_info: dict = None, 
-    post_number: int = 1
-) -> List[dict]:
-    """Extrae comentarios de Facebook"""
-    try:
-        logger.info(f"Processing Facebook Post {post_number}: {url}")
-    
-        # ✅ Parámetros corregidos para Facebook
-        run_input = {
-            "startUrls": [{"url": self.clean_url(url)}],
-            "maxComments": max_comments,
-            "maxPostComments": max_comments,  # Redundancia para asegurar límite
-            "commentsMode": "RANKED_UNFILTERED",  # Obtener todos los comentarios
-            "scrapeReplies": True  # Incluir respuestas si quieres
-        }
+    def scrape_facebook_comments(
+        self, 
+        url: str, 
+        max_comments: int = 500, 
+        campaign_info: dict = None, 
+        post_number: int = 1
+    ) -> List[dict]:
+        """Extrae comentarios de Facebook"""
+        try:
+            logger.info(f"Processing Facebook Post {post_number}: {url}")
         
-        logger.info(f"Facebook run_input: {run_input}")  # Debug
-    
-        run = self.client.actor("apify/facebook-comments-scraper").call(
-            run_input=run_input
-        )
-        run_status = self._wait_for_run_finish(run)
-    
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+            # ✅ Parámetros corregidos para Facebook
+            run_input = {
+                "startUrls": [{"url": self.clean_url(url)}],
+                "maxComments": max_comments,
+                "maxPostComments": max_comments,  # Redundancia para asegurar límite
+                "commentsMode": "RANKED_UNFILTERED",  # Obtener todos los comentarios
+                "scrapeReplies": True  # Incluir respuestas si quieres
+            }
+            
+            logger.info(f"Facebook run_input: {run_input}")  # Debug
+        
+            run = self.client.actor("apify/facebook-comments-scraper").call(
+                run_input=run_input
             )
-            return []
-    
-        # Obtener items de Apify
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        items_response = dataset.list_items(clean=True, limit=max_comments)
-        items = items_response.items
-    
-        logger.info(f"Extraction complete: {len(items)} items found.")
-    
-        # Deduplicación manual post-extracción
-        items = self._deduplicate_items(items, platform='Facebook')
-        logger.info(f"After deduplication: {len(items)} unique items.")
-    
-        return self._process_facebook_results(items, url, post_number, campaign_info)
-    
-    except Exception as e:
-        logger.error(f"Error in scrape_facebook_comments: {e}")
-        raise
+            run_status = self._wait_for_run_finish(run)
+        
+            if not run_status or run_status["status"] != "SUCCEEDED":
+                logger.error(
+                    f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+                )
+                return []
+        
+            # Obtener items de Apify
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items = items_response.items
+        
+            logger.info(f"Extraction complete: {len(items)} items found.")
+        
+            # Deduplicación manual post-extracción
+            items = self._deduplicate_items(items, platform='Facebook')
+            logger.info(f"After deduplication: {len(items)} unique items.")
+        
+            return self._process_facebook_results(items, url, post_number, campaign_info)
+        
+        except Exception as e:
+            logger.error(f"Error in scrape_facebook_comments: {e}")
+            raise
 
-   def scrape_instagram_comments(
-    self, 
-    url: str, 
-    max_comments: int = 500, 
-    campaign_info: dict = None, 
-    post_number: int = 1
-) -> List[dict]:
-    """Extrae comentarios de Instagram"""
-    try:
-        logger.info(f"Processing Instagram Post {post_number}: {url}")
-    
-        # ✅ Parámetros corregidos para Instagram
-        run_input = {
-            "directUrls": [url],
-            "resultsType": "comments",
-            "resultsLimit": max_comments,
-            "maxComments": max_comments,  # Asegurar límite
-            "searchLimit": max_comments,  # Otro parámetro de límite
-            "addParentData": False  # Optimizar velocidad
-        }
+    def scrape_instagram_comments(
+        self, 
+        url: str, 
+        max_comments: int = 500, 
+        campaign_info: dict = None, 
+        post_number: int = 1
+    ) -> List[dict]:
+        """Extrae comentarios de Instagram"""
+        try:
+            logger.info(f"Processing Instagram Post {post_number}: {url}")
         
-        logger.info(f"Instagram run_input: {run_input}")  # Debug
-    
-        run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
-        run_status = self._wait_for_run_finish(run)
-    
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"Instagram extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
-            )
-            return []
-    
-        # Obtener items de Apify
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        items_response = dataset.list_items(clean=True, limit=max_comments)
-        items = items_response.items
-    
-        logger.info(f"Extraction complete: {len(items)} items found.")
-    
-        # Deduplicación manual post-extracción
-        items = self._deduplicate_items(items, platform='Instagram')
-        logger.info(f"After deduplication: {len(items)} unique items.")
-    
-        return self._process_instagram_results(items, url, post_number, campaign_info)
-    
-    except Exception as e:
-        logger.error(f"Error in scrape_instagram_comments: {e}")
-        raise
+            # ✅ Parámetros corregidos para Instagram
+            run_input = {
+                "directUrls": [url],
+                "resultsType": "comments",
+                "resultsLimit": max_comments,
+                "maxComments": max_comments,  # Asegurar límite
+                "searchLimit": max_comments,  # Otro parámetro de límite
+                "addParentData": False  # Optimizar velocidad
+            }
+            
+            logger.info(f"Instagram run_input: {run_input}")  # Debug
+        
+            run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
+            run_status = self._wait_for_run_finish(run)
+        
+            if not run_status or run_status["status"] != "SUCCEEDED":
+                logger.error(
+                    f"Instagram extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+                )
+                return []
+        
+            # Obtener items de Apify
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items = items_response.items
+        
+            logger.info(f"Extraction complete: {len(items)} items found.")
+        
+            # Deduplicación manual post-extracción
+            items = self._deduplicate_items(items, platform='Instagram')
+            logger.info(f"After deduplication: {len(items)} unique items.")
+        
+            return self._process_instagram_results(items, url, post_number, campaign_info)
+        
+        except Exception as e:
+            logger.error(f"Error in scrape_instagram_comments: {e}")
+            raise
 
     def scrape_tiktok_comments(
-    self, 
-    url: str, 
-    max_comments: int = 500, 
-    campaign_info: dict = None, 
-    post_number: int = 1
-) -> List[dict]:
-    """Extrae comentarios de TikTok"""
-    try:
-        logger.info(f"Processing TikTok Post {post_number}: {url}")
-    
-        # ✅ Parámetros corregidos para TikTok
-        run_input = {
-            "postURLs": [self.clean_url(url)],
-            "maxCommentsPerPost": max_comments,
-            "commentsPerPost": max_comments,  # Redundancia
-            "maxRepliesPerComment": 0,  # Si solo quieres comentarios principales
-            # "maxRepliesPerComment": 100,  # Si quieres respuestas también
-        }
+        self, 
+        url: str, 
+        max_comments: int = 500, 
+        campaign_info: dict = None, 
+        post_number: int = 1
+    ) -> List[dict]:
+        """Extrae comentarios de TikTok"""
+        try:
+            logger.info(f"Processing TikTok Post {post_number}: {url}")
         
-        logger.info(f"TikTok run_input: {run_input}")  # Debug
-    
-        run = self.client.actor("clockworks/tiktok-comments-scraper").call(
-            run_input=run_input
-        )
-        run_status = self._wait_for_run_finish(run)
-    
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"TikTok extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+            # ✅ Parámetros corregidos para TikTok
+            run_input = {
+                "postURLs": [self.clean_url(url)],
+                "maxCommentsPerPost": max_comments,
+                "commentsPerPost": max_comments,  # Redundancia
+                "maxRepliesPerComment": 0,  # Si solo quieres comentarios principales
+                # "maxRepliesPerComment": 100,  # Si quieres respuestas también
+            }
+            
+            logger.info(f"TikTok run_input: {run_input}")  # Debug
+        
+            run = self.client.actor("clockworks/tiktok-comments-scraper").call(
+                run_input=run_input
             )
-            return []
-    
-        # Obtener items de Apify
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        items_response = dataset.list_items(clean=True, limit=max_comments)
-        items = items_response.items
-    
-        logger.info(f"Extraction complete: {len(items)} comments found.")
-    
-        # Deduplicación manual post-extracción
-        items = self._deduplicate_items(items, platform='TikTok')
-        logger.info(f"After deduplication: {len(items)} unique items.")
-    
-        return self._process_tiktok_results(items, url, post_number, campaign_info)
-    
-    except Exception as e:
-        logger.error(f"Error in scrape_tiktok_comments: {e}")
-        raise
+            run_status = self._wait_for_run_finish(run)
+        
+            if not run_status or run_status["status"] != "SUCCEEDED":
+                logger.error(
+                    f"TikTok extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+                )
+                return []
+        
+            # Obtener items de Apify
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items = items_response.items
+        
+            logger.info(f"Extraction complete: {len(items)} comments found.")
+        
+            # Deduplicación manual post-extracción
+            items = self._deduplicate_items(items, platform='TikTok')
+            logger.info(f"After deduplication: {len(items)} unique items.")
+        
+            return self._process_tiktok_results(items, url, post_number, campaign_info)
+        
+        except Exception as e:
+            logger.error(f"Error in scrape_tiktok_comments: {e}")
+            raise
 
     def _process_facebook_results(
         self, 
@@ -1318,6 +1318,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
-
-
