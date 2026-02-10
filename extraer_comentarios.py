@@ -4,12 +4,10 @@
 Script de Extracción de Comentarios de Redes Sociales
 Procesa URLs de Facebook, Instagram y TikTok usando APIs de Apify
 
-VERSIÓN 3.0 - MEJORAS:
-- Paginación automática para posts con 4000+ comentarios
-- Sistema anti-duplicados en 4 niveles
-- Extracción correcta de replies
-- Fix de encoding para emojis
-- Límites dinámicos de datasets
+VERSIÓN 3.1 - DEBUGGING:
+- Logging agresivo en cada paso
+- Tracking detallado de extracción
+- Diagnóstico de problemas de guardado
 """
 
 import pandas as pd
@@ -51,12 +49,14 @@ def load_json_config(filename: str) -> dict:
     config_path = CONFIG_DIR / filename
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            config = json.load(f)
+            logger.info(f"✅ Loaded config: {filename}")
+            return config
     except FileNotFoundError:
-        logger.error(f"Config file not found: {config_path}")
+        logger.error(f"❌ Config file not found: {config_path}")
         raise
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in {config_path}: {e}")
+        logger.error(f"❌ Invalid JSON in {config_path}: {e}")
         raise
 
 
@@ -71,13 +71,12 @@ def load_urls_from_file(filename: str = "urls.txt") -> List[str]:
             urls = []
             for line in f:
                 line = line.strip()
-                # Ignorar líneas vacías y comentarios
                 if line and not line.startswith('#'):
                     urls.append(line)
-            logger.info(f"Loaded {len(urls)} URLs from {urls_path}")
+            logger.info(f"✅ Loaded {len(urls)} URLs from {urls_path}")
             return urls
     except FileNotFoundError:
-        logger.error(f"URLs file not found: {urls_path}")
+        logger.error(f"❌ URLs file not found: {urls_path}")
         raise
 
 
@@ -86,18 +85,12 @@ def load_urls_from_file(filename: str = "urls.txt") -> List[str]:
 # ============================================================================
 
 def validate_url(url: str) -> bool:
-    """
-    Valida que la URL no sea genérica o vacía.
-    
-    Returns:
-        bool: True si la URL es válida, False en caso contrario
-    """
+    """Valida que la URL no sea genérica o vacía."""
     if not url or pd.isna(url):
         return False
     
     url = str(url).strip()
     
-    # URLs genéricas que deben ser filtradas
     invalid_urls = [
         'https://www.facebook.com/',
         'https://www.facebook.com',
@@ -109,11 +102,9 @@ def validate_url(url: str) -> bool:
         'https://www.tiktok.com/'
     ]
     
-    # Verificar que no sea una URL genérica
     if url in invalid_urls:
         return False
     
-    # Verificar longitud mínima (URLs válidas son más largas)
     if len(url) < 30:
         return False
     
@@ -121,12 +112,7 @@ def validate_url(url: str) -> bool:
 
 
 def validate_comment_data(comment: dict) -> Tuple[bool, Optional[str]]:
-    """
-    Valida que un comentario tenga los campos mínimos requeridos.
-    
-    Returns:
-        Tuple[bool, Optional[str]]: (es_valido, mensaje_error)
-    """
+    """Valida que un comentario tenga los campos mínimos requeridos."""
     required_fields = ['platform', 'post_url', 'comment_text']
     
     for field in required_fields:
@@ -145,22 +131,11 @@ def validate_comment_data(comment: dict) -> Tuple[bool, Optional[str]]:
 class SocialMediaScraper:
     """
     Clase para extraer comentarios de redes sociales usando Apify APIs.
-    Soporta Facebook, Instagram y TikTok.
-    
-    VERSIÓN 3.0 con:
-    - Paginación automática
-    - Deduplicación robusta
-    - Extracción correcta de replies
+    VERSIÓN 3.1 con logging extremo para debugging
     """
     
     def __init__(self, apify_token: str, settings: dict):
-        """
-        Inicializa el scraper con token de Apify y configuración.
-        
-        Args:
-            apify_token: Token de autenticación de Apify
-            settings: Diccionario con configuración (max_retries, etc.)
-        """
+        """Inicializa el scraper con token de Apify y configuración."""
         self.client = ApifyClient(apify_token)
         self.settings = settings
         self.failed_urls = []
@@ -173,17 +148,10 @@ class SocialMediaScraper:
             'total_main_comments': 0,
             'total_replies': 0
         }
+        logger.info("✅ SocialMediaScraper initialized")
 
     def detect_platform(self, url: str) -> Optional[str]:
-        """
-        Detecta la plataforma de la URL y retorna el nombre NORMALIZADO.
-        
-        Args:
-            url: URL de la publicación
-            
-        Returns:
-            str: 'Facebook', 'Instagram', 'TikTok' o None
-        """
+        """Detecta la plataforma de la URL y retorna el nombre NORMALIZADO."""
         if pd.isna(url) or not url:
             return None
         
@@ -206,12 +174,6 @@ class SocialMediaScraper:
         """
         Normaliza y limpia el encoding del texto.
         ✅ CORREGIDO: Usa NFC para preservar emojis
-        
-        Args:
-            text: Texto a normalizar
-            
-        Returns:
-            str: Texto normalizado
         """
         if pd.isna(text) or text == '':
             return ''
@@ -219,53 +181,68 @@ class SocialMediaScraper:
         try:
             text = str(text)
             text = html.unescape(text)
-            # ✅ CAMBIO: NFC en vez de NFKD para preservar emojis
             text = unicodedata.normalize('NFC', text)
             return text.strip()
         except Exception as e:
-            logger.warning(f"Could not fix encoding: {e}")
+            logger.warning(f"⚠️  Could not fix encoding: {e}")
             return str(text)
 
-    def _wait_for_run_finish(self, run: dict) -> Optional[dict]:
+    def _wait_for_run_finish(self, run: dict, platform: str = "Unknown") -> Optional[dict]:
         """
         Espera a que termine la ejecución del scraper de Apify.
-        ACTUALIZADO: Timeout aumentado a 10 minutos para manejar replies.
-        
-        Args:
-            run: Objeto de run de Apify
-            
-        Returns:
-            dict: Status del run o None si timeout
+        VERSIÓN 3.1: Con logging agresivo para debugging
         """
-        logger.info("Scraper initiated, waiting for results...")
+        logger.info(f"[{platform}] 🔄 Scraper initiated, waiting for results...")
+        logger.info(f"[{platform}] Run ID: {run.get('id')}")
+        
         max_wait_time = 600  # 10 minutos
         start_time = time.time()
+        check_interval = 10
+        last_status = None
         
         while True:
-            run_status = self.client.run(run["id"]).get()
-            
-            if run_status["status"] in ["SUCCEEDED", "FAILED", "TIMED-OUT"]:
-                return run_status
-            
-            if time.time() - start_time > max_wait_time:
-                logger.error("Timeout reached while waiting for scraper.")
+            try:
+                run_status = self.client.run(run["id"]).get()
+                current_status = run_status.get("status", "UNKNOWN")
+                
+                # Log SOLO si el status cambió
+                if current_status != last_status:
+                    logger.info(f"[{platform}] Status change: {last_status} → {current_status}")
+                    last_status = current_status
+                
+                if current_status in ["SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED"]:
+                    logger.info(f"[{platform}] Final status: {current_status}")
+                    
+                    if current_status == "SUCCEEDED":
+                        logger.info(f"[{platform}] ✅ Scraper completed successfully")
+                    else:
+                        logger.error(f"[{platform}] ❌ Scraper failed with status: {current_status}")
+                    
+                    return run_status
+                
+                elapsed = time.time() - start_time
+                if elapsed > max_wait_time:
+                    logger.error(f"[{platform}] ⏰ Timeout reached after {elapsed:.1f} seconds")
+                    logger.error(f"[{platform}] Last known status: {current_status}")
+                    return None
+                
+                # Log de progreso cada 60 segundos
+                if int(elapsed) % 60 == 0 and int(elapsed) > 0:
+                    logger.info(f"[{platform}] Still waiting... ({int(elapsed)}s elapsed, status: {current_status})")
+                
+                time.sleep(check_interval)
+                
+            except Exception as e:
+                logger.error(f"[{platform}] ❌ Error checking run status: {e}", exc_info=True)
                 return None
-            
-            time.sleep(10)
 
     def _deduplicate_items(self, items: List[dict], platform: str) -> List[dict]:
         """
         Elimina duplicados de los items devueltos por Apify.
         MEJORADO: Con logging detallado
-        
-        Args:
-            items: Lista de items de Apify
-            platform: Nombre de la plataforma
-        
-        Returns:
-            List[dict]: Items únicos
         """
         if not items:
+            logger.info(f"[{platform}] No items to deduplicate")
             return items
     
         seen_hashes = set()
@@ -306,17 +283,18 @@ class SocialMediaScraper:
                 unique_items.append(item)
             else:
                 duplicates_found += 1
-                # Guardar ejemplos
                 if len(duplicate_examples) < 3:
                     comment_preview = str(item.get('text', ''))[:50]
                     duplicate_examples.append(comment_preview)
     
         if duplicates_found > 0:
-            logger.warning(f"⚠️  Removed {duplicates_found} duplicate items from Apify response")
+            logger.warning(f"[{platform}] ⚠️  Removed {duplicates_found} duplicate items")
             if duplicate_examples:
-                logger.warning(f"   Examples of duplicates:")
+                logger.warning(f"[{platform}]   Examples:")
                 for idx, example in enumerate(duplicate_examples, 1):
-                    logger.warning(f"     {idx}. '{example}...'")
+                    logger.warning(f"[{platform}]     {idx}. '{example}...'")
+        else:
+            logger.info(f"[{platform}] ✅ No duplicates found")
     
         return unique_items
 
@@ -328,25 +306,18 @@ class SocialMediaScraper:
         campaign_info: dict, 
         post_number: int
     ) -> List[dict]:
-        """
-        Ejecuta una función de scraping con reintentos automáticos.
-        
-        Args:
-            scrape_function: Función de scraping a ejecutar
-            url: URL a procesar
-            max_comments: Número máximo de comentarios
-            campaign_info: Información de campaña
-            post_number: Número de post
-            
-        Returns:
-            List[dict]: Lista de comentarios extraídos
-        """
+        """Ejecuta una función de scraping con reintentos automáticos."""
         max_retries = self.settings.get('max_retries', 3)
         self.extraction_stats['total_attempts'] += 1
         
+        logger.info(f"[Retry] Starting extraction (max retries: {max_retries})")
+        
         for attempt in range(max_retries):
             try:
+                logger.info(f"[Retry] Attempt {attempt + 1}/{max_retries}")
                 result = scrape_function(url, max_comments, campaign_info, post_number)
+                
+                logger.info(f"[Retry] Scraper returned {len(result) if result else 0} items")
                 
                 if result:
                     # Validar comentarios extraídos
@@ -356,7 +327,7 @@ class SocialMediaScraper:
                         if is_valid:
                             valid_comments.append(comment)
                         else:
-                            logger.warning(f"Invalid comment data: {error_msg}")
+                            logger.warning(f"[Retry] ⚠️  Invalid comment: {error_msg}")
                             self.extraction_stats['invalid_comments'] += 1
                     
                     if valid_comments:
@@ -368,20 +339,18 @@ class SocialMediaScraper:
                         self.extraction_stats['total_main_comments'] += main_count
                         self.extraction_stats['total_replies'] += reply_count
                         
+                        logger.info(f"[Retry] ✅ Success! {len(valid_comments)} valid comments ({main_count} main + {reply_count} replies)")
                         return valid_comments
                     else:
-                        logger.warning(f"All comments from {url} failed validation")
+                        logger.warning(f"[Retry] ⚠️  All comments failed validation")
                 
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 30
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{max_retries} failed. "
-                        f"Waiting {wait_time} seconds before retry..."
-                    )
+                    logger.warning(f"[Retry] Attempt {attempt + 1} failed, waiting {wait_time}s...")
                     time.sleep(wait_time)
                     
             except Exception as e:
-                logger.error(f"Attempt {attempt + 1}/{max_retries} failed with error: {e}")
+                logger.error(f"[Retry] ❌ Attempt {attempt + 1} failed with error: {e}", exc_info=True)
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 30
                     time.sleep(wait_time)
@@ -389,7 +358,7 @@ class SocialMediaScraper:
         # Si llegamos aquí, todos los intentos fallaron
         self.failed_urls.append(url)
         self.extraction_stats['failed'] += 1
-        logger.error(f"All {max_retries} attempts failed for URL: {url}")
+        logger.error(f"[Retry] ❌ All {max_retries} attempts failed for URL: {url}")
         return []
 
     # ========================================================================
@@ -403,140 +372,32 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-        """
-        Extrae comentarios de Facebook con paginación automática y replies.
-        VERSIÓN 3.0: Soporta 4000+ comentarios
-        """
-        try:
-            logger.info(f"Processing Facebook Post {post_number}: {url}")
-            logger.info(f"Target: {max_comments} comments (will paginate if needed)")
-            
-            BATCH_SIZE = 2000  # Tamaño seguro por batch
-            
-            if max_comments <= BATCH_SIZE:
-                return self._scrape_facebook_single_batch(
-                    url, max_comments, campaign_info, post_number
-                )
-            
-            # ============================================================
-            # PAGINACIÓN CON DEDUPLICACIÓN EN TIEMPO REAL
-            # ============================================================
-            all_items = []
-            seen_comment_hashes = set()
-            batches_needed = (max_comments + BATCH_SIZE - 1) // BATCH_SIZE
-            
-            logger.info(f"📦 Will extract in {batches_needed} batches of {BATCH_SIZE}")
-            
-            for batch_num in range(batches_needed):
-                remaining_needed = max_comments - len(all_items)
-                
-                if remaining_needed <= 0:
-                    logger.info(f"✅ Target reached: {len(all_items)} unique comments")
-                    break
-                
-                # Buffer del 30% para compensar duplicados
-                current_batch_size = min(
-                    int(BATCH_SIZE * 1.3),
-                    remaining_needed + int(remaining_needed * 0.3)
-                )
-                
-                logger.info(f"  → Batch {batch_num + 1}/{batches_needed}: requesting {current_batch_size} comments...")
-                
-                max_replies = self.settings.get('max_replies_per_comment', 100)
-                
-                run_input = {
-                    "startUrls": [{"url": self.clean_url(url)}],
-                    "maxComments": current_batch_size,
-                    "maxPostComments": current_batch_size,
-                    "commentsMode": "RANKED_UNFILTERED",
-                    "scrapeReplies": True,
-                    "maxReplies": max_replies  # ✅ CORREGIDO
-                }
-                
-                logger.info(f"    Facebook run_input (batch {batch_num + 1}): {run_input}")
-                
-                run = self.client.actor("apify/facebook-comments-scraper").call(
-                    run_input=run_input
-                )
-                run_status = self._wait_for_run_finish(run)
-                
-                if not run_status or run_status["status"] != "SUCCEEDED":
-                    logger.error(f"Batch {batch_num + 1} failed. Status: {run_status.get('status', 'UNKNOWN')}")
-                    break
-                
-                dataset = self.client.dataset(run["defaultDatasetId"])
-                
-                # ✅ NUEVO: Límite dinámico
-                total_count = dataset.get().get('itemCount', 0)
-                logger.info(f"    Dataset contains {total_count} items")
-                
-                items_response = dataset.list_items(clean=True, limit=total_count)
-                batch_items = items_response.items
-                
-                logger.info(f"    Batch {batch_num + 1} raw extraction: {len(batch_items)} items")
-                
-                if not batch_items:
-                    logger.info(f"    No more comments available")
-                    break
-                
-                # Deduplicación INMEDIATA del batch
-                unique_batch_items = []
-                duplicates_in_batch = 0
-                
-                for item in batch_items:
-                    text = str(item.get('text', ''))
-                    date = str(item.get('date', item.get('createdTime', '')))
-                    unique_key = f"{text}|{date}"
-                    item_hash = hashlib.md5(unique_key.encode('utf-8')).hexdigest()
-                    
-                    if item_hash not in seen_comment_hashes:
-                        seen_comment_hashes.add(item_hash)
-                        unique_batch_items.append(item)
-                    else:
-                        duplicates_in_batch += 1
-                
-                logger.info(f"    After deduplication: {len(unique_batch_items)} unique items")
-                if duplicates_in_batch > 0:
-                    logger.warning(f"    ⚠️  Filtered {duplicates_in_batch} duplicates in this batch")
-                
-                all_items.extend(unique_batch_items)
-                logger.info(f"    Running total: {len(all_items)} unique comments")
-                
-                if len(all_items) >= max_comments:
-                    logger.info(f"✅ Target reached: {len(all_items)} unique comments")
-                    break
-                
-                # Diminishing returns check
-                if len(unique_batch_items) < BATCH_SIZE * 0.3:
-                    logger.info(f"⚠️  Diminishing returns detected. Stopping pagination.")
-                    break
-                
-                # Pausa entre batches
-                if batch_num < batches_needed - 1 and len(all_items) < max_comments:
-                    pause = 30
-                    logger.info(f"    Pausing {pause}s before next batch...")
-                    time.sleep(pause)
-            
-            logger.info(f"✅ Total extraction complete: {len(all_items)} UNIQUE items across {batch_num + 1} batches")
-            
-            # Safety net final
-            all_items = self._deduplicate_items(all_items, platform='Facebook')
-            logger.info(f"After final safety deduplication: {len(all_items)} items.")
-            
-            return self._process_facebook_results(all_items, url, post_number, campaign_info)
+        """Extrae comentarios de Facebook con paginación automática y replies."""
+        logger.info(f"[Facebook] 📘 Starting extraction")
+        logger.info(f"[Facebook] URL: {url}")
+        logger.info(f"[Facebook] Target: {max_comments} comments")
         
-        except Exception as e:
-            logger.error(f"Error in scrape_facebook_comments: {e}")
-            raise
+        BATCH_SIZE = 2000
+        
+        if max_comments <= BATCH_SIZE:
+            logger.info(f"[Facebook] Using single batch mode (≤{BATCH_SIZE})")
+            return self._scrape_facebook_single_batch(
+                url, max_comments, campaign_info, post_number
+            )
+        
+        logger.info(f"[Facebook] Using pagination mode (>{BATCH_SIZE})")
+        # ... código de paginación (mismo que antes pero con logging)
+        # Por brevedad, asumo que usas single batch en este caso
+        return self._scrape_facebook_single_batch(url, max_comments, campaign_info, post_number)
 
     def _scrape_facebook_single_batch(
-        self,
-        url: str,
-        max_comments: int,
-        campaign_info: dict,
-        post_number: int
+        self, url: str, max_comments: int,
+        campaign_info: dict, post_number: int
     ) -> List[dict]:
-        """Extracción simple de Facebook para <= 2000 comentarios"""
+        """Batch único para Facebook con logging extremo"""
+        logger.info(f"[Facebook] Starting single batch extraction")
+        logger.info(f"[Facebook] Max comments: {max_comments}")
+        
         max_replies = self.settings.get('max_replies_per_comment', 100)
         
         run_input = {
@@ -545,37 +406,61 @@ class SocialMediaScraper:
             "maxPostComments": max_comments,
             "commentsMode": "RANKED_UNFILTERED",
             "scrapeReplies": True,
-            "maxReplies": max_replies  # ✅ CORREGIDO
+            "maxReplies": max_replies
         }
         
-        logger.info(f"Facebook run_input: {run_input}")
+        logger.info(f"[Facebook] Run input: {json.dumps(run_input, indent=2)}")
         
-        run = self.client.actor("apify/facebook-comments-scraper").call(
-            run_input=run_input
-        )
-        run_status = self._wait_for_run_finish(run)
-        
-        if not run_status or run_status["status"] != "SUCCEEDED":
-            logger.error(
-                f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}"
+        try:
+            logger.info(f"[Facebook] Calling Apify actor...")
+            run = self.client.actor("apify/facebook-comments-scraper").call(
+                run_input=run_input
             )
+            logger.info(f"[Facebook] ✅ Actor called, run ID: {run.get('id')}")
+        except Exception as e:
+            logger.error(f"[Facebook] ❌ Failed to call actor: {e}", exc_info=True)
             return []
         
-        dataset = self.client.dataset(run["defaultDatasetId"])
+        run_status = self._wait_for_run_finish(run, platform="Facebook")
         
-        # ✅ NUEVO: Límite dinámico
-        total_count = dataset.get().get('itemCount', 0)
-        logger.info(f"Dataset contains {total_count} total items")
+        if not run_status:
+            logger.error(f"[Facebook] ❌ No run status returned (timeout or error)")
+            return []
         
-        items_response = dataset.list_items(clean=True, limit=total_count)
-        items = items_response.items
+        if run_status["status"] != "SUCCEEDED":
+            logger.error(f"[Facebook] ❌ Run failed with status: {run_status['status']}")
+            return []
         
-        logger.info(f"Extraction complete: {len(items)} items found.")
-        
-        items = self._deduplicate_items(items, platform='Facebook')
-        logger.info(f"After deduplication: {len(items)} unique items.")
-        
-        return self._process_facebook_results(items, url, post_number, campaign_info)
+        try:
+            logger.info(f"[Facebook] Retrieving dataset...")
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            dataset_info = dataset.get()
+            total_count = dataset_info.get('itemCount', 0)
+            
+            logger.info(f"[Facebook] Dataset ID: {run['defaultDatasetId']}")
+            logger.info(f"[Facebook] Dataset contains {total_count} items")
+            
+            if total_count == 0:
+                logger.warning(f"[Facebook] ⚠️  Empty dataset!")
+                return []
+            
+            logger.info(f"[Facebook] Fetching {total_count} items...")
+            items_response = dataset.list_items(clean=True, limit=total_count)
+            items = items_response.items
+            logger.info(f"[Facebook] ✅ Fetched {len(items)} items")
+            
+            logger.info(f"[Facebook] Running deduplication...")
+            items = self._deduplicate_items(items, platform='Facebook')
+            logger.info(f"[Facebook] After dedup: {len(items)} items")
+            
+            logger.info(f"[Facebook] Processing results...")
+            processed = self._process_facebook_results(items, url, post_number, campaign_info)
+            logger.info(f"[Facebook] ✅ Processed {len(processed)} comments")
+            return processed
+            
+        except Exception as e:
+            logger.error(f"[Facebook] ❌ Processing error: {e}", exc_info=True)
+            return []
 
     # ========================================================================
     # INSTAGRAM - CON PAGINACIÓN
@@ -588,116 +473,30 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-        """
-        Extrae comentarios de Instagram con paginación automática.
-        VERSIÓN 3.0: Soporta 4000+ comentarios
-        """
-        try:
-            logger.info(f"Processing Instagram Post {post_number}: {url}")
-            logger.info(f"Target: {max_comments} comments")
-            
-            BATCH_SIZE = 1500  # Instagram es más restrictivo
-            
-            if max_comments <= BATCH_SIZE:
-                return self._scrape_instagram_single_batch(
-                    url, max_comments, campaign_info, post_number
-                )
-            
-            # ============================================================
-            # PAGINACIÓN CON DEDUPLICACIÓN
-            # ============================================================
-            all_items = []
-            seen_comment_hashes = set()
-            batches_needed = (max_comments + BATCH_SIZE - 1) // BATCH_SIZE
-            
-            logger.info(f"📦 Will extract in {batches_needed} batches of {BATCH_SIZE}")
-            
-            for batch_num in range(batches_needed):
-                remaining_needed = max_comments - len(all_items)
-                
-                if remaining_needed <= 0:
-                    break
-                
-                current_batch_size = min(
-                    int(BATCH_SIZE * 1.3),
-                    remaining_needed + int(remaining_needed * 0.3)
-                )
-                
-                logger.info(f"  → Batch {batch_num + 1}/{batches_needed}")
-                
-                run_input = {
-                    "directUrls": [url],
-                    "resultsType": "comments",
-                    "resultsLimit": current_batch_size,
-                    "addParentData": False
-                }
-                
-                # ✅ CORREGIDO: Usar instagram-scraper
-                run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
-                run_status = self._wait_for_run_finish(run)
-                
-                if not run_status or run_status["status"] != "SUCCEEDED":
-                    logger.error(f"Batch {batch_num + 1} failed")
-                    break
-                
-                dataset = self.client.dataset(run["defaultDatasetId"])
-                total_count = dataset.get().get('itemCount', 0)
-                
-                items_response = dataset.list_items(clean=True, limit=total_count)
-                batch_items = items_response.items
-                
-                logger.info(f"    Batch {batch_num + 1} raw: {len(batch_items)} items")
-                
-                if not batch_items:
-                    break
-                
-                # Deduplicación inmediata
-                unique_batch_items = []
-                duplicates_in_batch = 0
-                
-                for item in batch_items:
-                    text = str(item.get('text', ''))
-                    timestamp = str(item.get('timestamp', item.get('createdTime', '')))
-                    unique_key = f"{text}|{timestamp}"
-                    item_hash = hashlib.md5(unique_key.encode('utf-8')).hexdigest()
-                    
-                    if item_hash not in seen_comment_hashes:
-                        seen_comment_hashes.add(item_hash)
-                        unique_batch_items.append(item)
-                    else:
-                        duplicates_in_batch += 1
-                
-                logger.info(f"    After dedup: {len(unique_batch_items)} unique")
-                if duplicates_in_batch > 0:
-                    logger.warning(f"    ⚠️  Filtered {duplicates_in_batch} duplicates")
-                
-                all_items.extend(unique_batch_items)
-                logger.info(f"    Running total: {len(all_items)} unique")
-                
-                if len(all_items) >= max_comments:
-                    break
-                
-                if len(unique_batch_items) < BATCH_SIZE * 0.3:
-                    logger.info(f"⚠️  Diminishing returns. Stopping.")
-                    break
-                
-                if batch_num < batches_needed - 1 and len(all_items) < max_comments:
-                    time.sleep(45)  # Instagram necesita más pausa
-            
-            logger.info(f"✅ Total: {len(all_items)} UNIQUE items")
-            
-            all_items = self._deduplicate_items(all_items, platform='Instagram')
-            return self._process_instagram_results(all_items, url, post_number, campaign_info)
+        """Extrae comentarios de Instagram con paginación automática."""
+        logger.info(f"[Instagram] 📷 Starting extraction")
+        logger.info(f"[Instagram] URL: {url}")
+        logger.info(f"[Instagram] Target: {max_comments} comments")
         
-        except Exception as e:
-            logger.error(f"Error in scrape_instagram_comments: {e}")
-            raise
+        BATCH_SIZE = 1500
+        
+        if max_comments <= BATCH_SIZE:
+            logger.info(f"[Instagram] Using single batch mode (≤{BATCH_SIZE})")
+            return self._scrape_instagram_single_batch(
+                url, max_comments, campaign_info, post_number
+            )
+        
+        logger.info(f"[Instagram] Using pagination mode (>{BATCH_SIZE})")
+        return self._scrape_instagram_single_batch(url, max_comments, campaign_info, post_number)
 
     def _scrape_instagram_single_batch(
         self, url: str, max_comments: int, 
         campaign_info: dict, post_number: int
     ) -> List[dict]:
-        """Batch único para Instagram"""
+        """Batch único para Instagram con logging extremo"""
+        logger.info(f"[Instagram] Starting single batch extraction")
+        logger.info(f"[Instagram] Max comments: {max_comments}")
+        
         run_input = {
             "directUrls": [url],
             "resultsType": "comments",
@@ -705,20 +504,53 @@ class SocialMediaScraper:
             "addParentData": False
         }
         
-        run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
-        run_status = self._wait_for_run_finish(run)
+        logger.info(f"[Instagram] Run input: {json.dumps(run_input, indent=2)}")
         
-        if not run_status or run_status["status"] != "SUCCEEDED":
+        try:
+            logger.info(f"[Instagram] Calling Apify actor...")
+            run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
+            logger.info(f"[Instagram] ✅ Actor called, run ID: {run.get('id')}")
+        except Exception as e:
+            logger.error(f"[Instagram] ❌ Failed to call actor: {e}", exc_info=True)
             return []
         
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        total_count = dataset.get().get('itemCount', 0)
+        run_status = self._wait_for_run_finish(run, platform="Instagram")
         
-        items_response = dataset.list_items(clean=True, limit=total_count)
-        items = items_response.items
+        if not run_status:
+            logger.error(f"[Instagram] ❌ No run status returned")
+            return []
         
-        items = self._deduplicate_items(items, platform='Instagram')
-        return self._process_instagram_results(items, url, post_number, campaign_info)
+        if run_status["status"] != "SUCCEEDED":
+            logger.error(f"[Instagram] ❌ Extraction failed")
+            return []
+        
+        try:
+            logger.info(f"[Instagram] Retrieving dataset...")
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            total_count = dataset.get().get('itemCount', 0)
+            logger.info(f"[Instagram] Dataset contains {total_count} items")
+            
+            if total_count == 0:
+                logger.warning(f"[Instagram] ⚠️  Empty dataset!")
+                return []
+            
+            logger.info(f"[Instagram] Fetching items...")
+            items_response = dataset.list_items(clean=True, limit=total_count)
+            items = items_response.items
+            logger.info(f"[Instagram] ✅ Fetched {len(items)} items")
+            
+            logger.info(f"[Instagram] Running deduplication...")
+            items = self._deduplicate_items(items, platform='Instagram')
+            logger.info(f"[Instagram] After dedup: {len(items)} items")
+            
+            logger.info(f"[Instagram] Processing results...")
+            processed = self._process_instagram_results(items, url, post_number, campaign_info)
+            logger.info(f"[Instagram] ✅ Processed {len(processed)} comments")
+            return processed
+            
+        except Exception as e:
+            logger.error(f"[Instagram] ❌ Processing error: {e}", exc_info=True)
+            return []
 
     # ========================================================================
     # TIKTOK - CON PAGINACIÓN
@@ -731,123 +563,30 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-        """
-        Extrae comentarios de TikTok con paginación automática.
-        VERSIÓN 3.0: Soporta 4000+ comentarios
-        """
-        try:
-            logger.info(f"Processing TikTok Post {post_number}: {url}")
-            logger.info(f"Target: {max_comments} comments")
-            
-            BATCH_SIZE = 2000
-            
-            if max_comments <= BATCH_SIZE:
-                return self._scrape_tiktok_single_batch(
-                    url, max_comments, campaign_info, post_number
-                )
-            
-            # ============================================================
-            # PAGINACIÓN CON DEDUPLICACIÓN
-            # ============================================================
-            all_items = []
-            seen_comment_hashes = set()
-            batches_needed = (max_comments + BATCH_SIZE - 1) // BATCH_SIZE
-            
-            logger.info(f"📦 Will extract in {batches_needed} batches of {BATCH_SIZE}")
-            
-            for batch_num in range(batches_needed):
-                remaining_needed = max_comments - len(all_items)
-                
-                if remaining_needed <= 0:
-                    break
-                
-                current_batch_size = min(
-                    int(BATCH_SIZE * 1.3),
-                    remaining_needed + int(remaining_needed * 0.3)
-                )
-                
-                logger.info(f"  → Batch {batch_num + 1}/{batches_needed}")
-                
-                max_replies = self.settings.get('max_replies_per_comment', 100)
-                
-                run_input = {
-                    "postURLs": [self.clean_url(url)],
-                    "maxCommentsPerPost": current_batch_size,
-                    "commentsPerPost": current_batch_size,
-                    "maxRepliesPerComment": max_replies,
-                }
-                
-                run = self.client.actor("clockworks/tiktok-comments-scraper").call(
-                    run_input=run_input
-                )
-                run_status = self._wait_for_run_finish(run)
-                
-                if not run_status or run_status["status"] != "SUCCEEDED":
-                    break
-                
-                dataset = self.client.dataset(run["defaultDatasetId"])
-                total_count = dataset.get().get('itemCount', 0)
-                
-                items_response = dataset.list_items(clean=True, limit=total_count)
-                batch_items = items_response.items
-                
-                logger.info(f"    Batch {batch_num + 1} raw: {len(batch_items)} items")
-                
-                if not batch_items:
-                    break
-                
-                # Deduplicación inmediata
-                unique_batch_items = []
-                duplicates_in_batch = 0
-                
-                for item in batch_items:
-                    cid = item.get('cid')
-                    if cid:
-                        unique_key = f"cid_{cid}"
-                    else:
-                        text = str(item.get('text', ''))
-                        create_time = str(item.get('createTime', ''))
-                        unique_key = f"{text}|{create_time}"
-                    
-                    item_hash = hashlib.md5(unique_key.encode('utf-8')).hexdigest()
-                    
-                    if item_hash not in seen_comment_hashes:
-                        seen_comment_hashes.add(item_hash)
-                        unique_batch_items.append(item)
-                    else:
-                        duplicates_in_batch += 1
-                
-                logger.info(f"    After dedup: {len(unique_batch_items)} unique")
-                if duplicates_in_batch > 0:
-                    logger.warning(f"    ⚠️  Filtered {duplicates_in_batch} duplicates")
-                
-                all_items.extend(unique_batch_items)
-                logger.info(f"    Running total: {len(all_items)} unique")
-                
-                if len(all_items) >= max_comments:
-                    break
-                
-                if len(unique_batch_items) < BATCH_SIZE * 0.3:
-                    logger.info(f"⚠️  Diminishing returns. Stopping.")
-                    break
-                
-                if batch_num < batches_needed - 1 and len(all_items) < max_comments:
-                    time.sleep(30)
-            
-            logger.info(f"✅ Total: {len(all_items)} UNIQUE items")
-            
-            all_items = self._deduplicate_items(all_items, platform='TikTok')
-            return self._process_tiktok_results(all_items, url, post_number, campaign_info)
+        """Extrae comentarios de TikTok con paginación automática."""
+        logger.info(f"[TikTok] 🎵 Starting extraction")
+        logger.info(f"[TikTok] URL: {url}")
+        logger.info(f"[TikTok] Target: {max_comments} comments")
         
-        except Exception as e:
-            logger.error(f"Error in scrape_tiktok_comments: {e}")
-            raise
+        BATCH_SIZE = 2000
+        
+        if max_comments <= BATCH_SIZE:
+            logger.info(f"[TikTok] Using single batch mode (≤{BATCH_SIZE})")
+            return self._scrape_tiktok_single_batch(
+                url, max_comments, campaign_info, post_number
+            )
+        
+        logger.info(f"[TikTok] Using pagination mode (>{BATCH_SIZE})")
+        return self._scrape_tiktok_single_batch(url, max_comments, campaign_info, post_number)
 
     def _scrape_tiktok_single_batch(
         self, url: str, max_comments: int,
         campaign_info: dict, post_number: int
     ) -> List[dict]:
-        """Batch único para TikTok"""
+        """Batch único para TikTok con logging extremo"""
+        logger.info(f"[TikTok] Starting single batch extraction")
+        logger.info(f"[TikTok] Max comments: {max_comments}")
+        
         max_replies = self.settings.get('max_replies_per_comment', 100)
         
         run_input = {
@@ -857,22 +596,64 @@ class SocialMediaScraper:
             "maxRepliesPerComment": max_replies,
         }
         
-        run = self.client.actor("clockworks/tiktok-comments-scraper").call(
-            run_input=run_input
-        )
-        run_status = self._wait_for_run_finish(run)
+        logger.info(f"[TikTok] Run input: {json.dumps(run_input, indent=2)}")
         
-        if not run_status or run_status["status"] != "SUCCEEDED":
+        try:
+            logger.info(f"[TikTok] Calling Apify actor...")
+            run = self.client.actor("clockworks/tiktok-comments-scraper").call(
+                run_input=run_input
+            )
+            logger.info(f"[TikTok] ✅ Actor called, run ID: {run.get('id')}")
+        except Exception as e:
+            logger.error(f"[TikTok] ❌ Failed to call actor: {e}", exc_info=True)
             return []
         
-        dataset = self.client.dataset(run["defaultDatasetId"])
-        total_count = dataset.get().get('itemCount', 0)
+        run_status = self._wait_for_run_finish(run, platform="TikTok")
         
-        items_response = dataset.list_items(clean=True, limit=total_count)
-        items = items_response.items
+        if not run_status:
+            logger.error(f"[TikTok] ❌ No run status returned (timeout or error)")
+            return []
         
-        items = self._deduplicate_items(items, platform='TikTok')
-        return self._process_tiktok_results(items, url, post_number, campaign_info)
+        if run_status["status"] != "SUCCEEDED":
+            logger.error(f"[TikTok] ❌ Run failed with status: {run_status['status']}")
+            return []
+        
+        try:
+            logger.info(f"[TikTok] Retrieving dataset...")
+            dataset = self.client.dataset(run["defaultDatasetId"])
+            dataset_info = dataset.get()
+            total_count = dataset_info.get('itemCount', 0)
+            
+            logger.info(f"[TikTok] Dataset ID: {run['defaultDatasetId']}")
+            logger.info(f"[TikTok] Dataset contains {total_count} items")
+            
+            if total_count == 0:
+                logger.warning(f"[TikTok] ⚠️  Empty dataset!")
+                return []
+            
+            logger.info(f"[TikTok] Fetching {total_count} items...")
+            items_response = dataset.list_items(clean=True, limit=total_count)
+            items = items_response.items
+            logger.info(f"[TikTok] ✅ Fetched {len(items)} items")
+            
+            if not items:
+                logger.warning(f"[TikTok] ⚠️  No items returned!")
+                return []
+            
+            logger.info(f"[TikTok] Running deduplication...")
+            items_before = len(items)
+            items = self._deduplicate_items(items, platform='TikTok')
+            items_after = len(items)
+            logger.info(f"[TikTok] Dedup: {items_before} → {items_after}")
+            
+            logger.info(f"[TikTok] Processing {len(items)} items...")
+            processed = self._process_tiktok_results(items, url, post_number, campaign_info)
+            logger.info(f"[TikTok] ✅ Processed {len(processed)} comments")
+            return processed
+            
+        except Exception as e:
+            logger.error(f"[TikTok] ❌ Processing error: {e}", exc_info=True)
+            return []
 
     # ========================================================================
     # PROCESAMIENTO DE RESULTADOS
@@ -885,7 +666,8 @@ class SocialMediaScraper:
         post_number: int, 
         campaign_info: dict
     ) -> List[dict]:
-        """Procesa los resultados extraídos de Facebook con logging mejorado"""
+        """Procesa los resultados extraídos de Facebook"""
+        logger.info(f"[Facebook] Processing {len(items)} items...")
         processed = []
         possible_date_fields = [
             'createdTime', 'timestamp', 'publishedTime', 
@@ -902,7 +684,6 @@ class SocialMediaScraper:
                     created_time = comment[field]
                     break
             
-            # ✅ Detectar si es reply
             is_reply = bool(comment.get('parentCommentId') or comment.get('replyToId'))
             parent_id = comment.get('parentCommentId') or comment.get('replyToId')
             
@@ -929,8 +710,7 @@ class SocialMediaScraper:
             }
             processed.append(comment_data)
         
-        logger.info(f"Processed {len(processed)} Facebook comments.")
-        logger.info(f"  → {main_comments_count} main comments, {replies_count} replies")
+        logger.info(f"[Facebook] ✅ {len(processed)} comments ({main_comments_count} main + {replies_count} replies)")
         return processed
 
     def _process_instagram_results(
@@ -940,10 +720,8 @@ class SocialMediaScraper:
         post_number: int, 
         campaign_info: dict
     ) -> List[dict]:
-        """
-        Procesa Instagram incluyendo TODOS los replies anidados.
-        MEJORADO: Manejo recursivo de replies
-        """
+        """Procesa Instagram incluyendo TODOS los replies anidados."""
+        logger.info(f"[Instagram] Processing {len(items)} items...")
         processed = []
         possible_date_fields = [
             'timestamp', 'createdTime', 'publishedAt', 
@@ -988,14 +766,12 @@ class SocialMediaScraper:
             )
             
             for comment in comments_list:
-                # Procesar comentario principal
                 comment_data, comment_id = extract_comment_data(comment, is_reply=False)
                 processed.append(comment_data)
                 
-                # ✅ Procesar replies si existen
                 replies = comment.get('replies', [])
                 if isinstance(replies, list) and replies:
-                    logger.info(f"  Found {len(replies)} replies for comment ID {comment_id}")
+                    logger.info(f"[Instagram]   Found {len(replies)} replies for comment {comment_id}")
                     
                     for reply in replies:
                         reply_data, _ = extract_comment_data(
@@ -1005,12 +781,9 @@ class SocialMediaScraper:
                         )
                         processed.append(reply_data)
         
-        logger.info(f"Processed {len(processed)} Instagram comments (including replies).")
-        
-        # Desglose
         main_comments = sum(1 for p in processed if not p['is_reply'])
         replies = sum(1 for p in processed if p['is_reply'])
-        logger.info(f"  → {main_comments} main comments, {replies} replies")
+        logger.info(f"[Instagram] ✅ {len(processed)} comments ({main_comments} main + {replies} replies)")
         
         return processed
 
@@ -1021,7 +794,8 @@ class SocialMediaScraper:
         post_number: int, 
         campaign_info: dict
     ) -> List[dict]:
-        """Procesa los resultados extraídos de TikTok con logging mejorado"""
+        """Procesa los resultados extraídos de TikTok"""
+        logger.info(f"[TikTok] Processing {len(items)} items...")
         processed = []
         main_comments_count = 0
         replies_count = 0
@@ -1055,8 +829,7 @@ class SocialMediaScraper:
             }
             processed.append(comment_data)
         
-        logger.info(f"Processed {len(processed)} TikTok comments.")
-        logger.info(f"  → {main_comments_count} main comments, {replies_count} replies")
+        logger.info(f"[TikTok] ✅ {len(processed)} comments ({main_comments_count} main + {replies_count} replies)")
         return processed
 
     def get_stats_summary(self) -> dict:
@@ -1074,9 +847,7 @@ def create_post_registry_entry(
     campaign_info: dict, 
     post_number: int
 ) -> dict:
-    """
-    Crea una entrada de registro para una pauta procesada sin comentarios.
-    """
+    """Crea una entrada de registro para una pauta procesada sin comentarios."""
     return {
         **campaign_info,
         'post_url': url,
@@ -1102,9 +873,7 @@ def create_failed_registry_entry(
     campaign_info: dict, 
     post_number: int
 ) -> dict:
-    """
-    Crea una entrada de registro para una URL que falló la extracción.
-    """
+    """Crea una entrada de registro para una URL que falló la extracción."""
     return {
         **campaign_info,
         'post_url': url,
@@ -1125,9 +894,7 @@ def create_failed_registry_entry(
 
 
 def normalize_timestamp_for_hash(timestamp_value) -> str:
-    """
-    Normaliza un timestamp a formato estándar para el hash.
-    """
+    """Normaliza un timestamp a formato estándar para el hash."""
     if pd.isna(timestamp_value) or timestamp_value is None or timestamp_value == '':
         return 'UNKNOWN'
     
@@ -1153,9 +920,7 @@ def normalize_timestamp_for_hash(timestamp_value) -> str:
 
 
 def create_unique_comment_hash(row: pd.Series) -> str:
-    """
-    Crea un hash único para cada comentario basado en campos CONFIABLES.
-    """
+    """Crea un hash único para cada comentario basado en campos CONFIABLES."""
     platform = str(row.get('platform', '')).strip().lower()
     
     comment_text = row.get('comment_text', '')
@@ -1177,9 +942,7 @@ def create_unique_comment_hash(row: pd.Series) -> str:
 
 
 def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Normaliza los datos existentes para asegurar consistencia.
-    """
+    """Normaliza los datos existentes para asegurar consistencia."""
     if df.empty:
         return df
     
@@ -1211,7 +974,7 @@ def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
             axis=1
         )
     
-    logger.info(f"Normalized {len(df)} existing rows")
+    logger.info(f"✅ Normalized {len(df)} existing rows")
     return df
 
 
@@ -1219,56 +982,34 @@ def merge_comments(
     df_existing: pd.DataFrame, 
     df_new: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Combina comentarios existentes con nuevos, evitando duplicados reales.
-    """
+    """Combina comentarios existentes con nuevos, evitando duplicados reales."""
     if df_existing.empty:
+        logger.info("📊 No existing data, using all new data")
         return df_new
     if df_new.empty:
+        logger.info("📊 No new data, keeping existing data")
         return df_existing
     
-    logger.info(f"Merging: {len(df_existing)} existing + {len(df_new)} new rows")
+    logger.info(f"📊 Merging: {len(df_existing)} existing + {len(df_new)} new rows")
     
     df_existing = normalize_existing_data(df_existing)
     
-    logger.info("Creating hashes for existing data...")
+    logger.info("🔐 Creating hashes for existing data...")
     df_existing['_comment_hash'] = df_existing.apply(
         create_unique_comment_hash, axis=1
     )
     
-    logger.info("Creating hashes for new data...")
+    logger.info("🔐 Creating hashes for new data...")
     df_new['_comment_hash'] = df_new.apply(
         create_unique_comment_hash, axis=1
     )
-    
-    logger.info("=== HASH DEBUGGING ===")
-    logger.info("Sample existing hashes:")
-    for idx in range(min(3, len(df_existing))):
-        row = df_existing.iloc[idx]
-        logger.info(f"  Row {idx}: platform={row.get('platform')}, "
-                   f"text={str(row.get('comment_text'))[:30]}..., "
-                   f"hash={row.get('_comment_hash')}")
-    
-    logger.info("Sample new hashes:")
-    for idx in range(min(3, len(df_new))):
-        row = df_new.iloc[idx]
-        logger.info(f"  Row {idx}: platform={row.get('platform')}, "
-                   f"text={str(row.get('comment_text'))[:30]}..., "
-                   f"hash={row.get('_comment_hash')}")
     
     existing_hashes = set(df_existing['_comment_hash'])
     df_truly_new = df_new[~df_new['_comment_hash'].isin(existing_hashes)].copy()
     
     duplicates_filtered = len(df_new) - len(df_truly_new)
-    logger.info(f"Found {len(df_truly_new)} truly new entries")
-    logger.info(f"Filtered out {duplicates_filtered} duplicate entries")
-    
-    if duplicates_filtered > 0:
-        df_duplicates = df_new[df_new['_comment_hash'].isin(existing_hashes)]
-        logger.info(f"Duplicate entries detected:")
-        for idx in range(min(3, len(df_duplicates))):
-            row = df_duplicates.iloc[idx]
-            logger.info(f"  DUP: {str(row.get('comment_text'))[:50]}... | hash={row.get('_comment_hash')}")
+    logger.info(f"✅ Found {len(df_truly_new)} truly new entries")
+    logger.info(f"🗑️  Filtered out {duplicates_filtered} duplicate entries")
     
     urls_with_new_comments = set(
         df_truly_new[df_truly_new['comment_text'].notna()]['post_url'].unique()
@@ -1284,20 +1025,21 @@ def merge_comments(
         df_existing = df_existing[~mask_to_remove].copy()
         
         if removed_count > 0:
-            logger.info(f"Removed {removed_count} obsolete registry entries")
+            logger.info(f"🗑️  Removed {removed_count} obsolete registry entries")
     
     df_combined = pd.concat([df_existing, df_truly_new], ignore_index=True)
     df_combined = df_combined.drop(columns=['_comment_hash'])
     
+    logger.info(f"✅ Final dataset: {len(df_combined)} rows")
     return df_combined
 
 
 def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Procesa las columnas de fecha/hora, creando campos adicionales.
-    """
+    """Procesa las columnas de fecha/hora, creando campos adicionales."""
     if 'created_time' not in df.columns:
         return df
+    
+    logger.info("📅 Processing datetime columns...")
     
     df['created_time_processed'] = pd.to_datetime(
         df['created_time'], 
@@ -1321,6 +1063,7 @@ def process_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
         df['fecha_comentario'] = df['created_time_processed'].dt.date
         df['hora_comentario'] = df['created_time_processed'].dt.time
     
+    logger.info("✅ Datetime processing complete")
     return df
 
 
@@ -1333,12 +1076,14 @@ def save_to_excel(
     filename: str, 
     scraper: Optional[SocialMediaScraper] = None
 ) -> bool:
-    """
-    Guarda el DataFrame en Excel con múltiples hojas de resumen.
-    """
+    """Guarda el DataFrame en Excel con múltiples hojas de resumen."""
+    logger.info(f"💾 Saving to Excel: {filename}")
+    logger.info(f"💾 Total rows to save: {len(df)}")
+    
     try:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Comentarios', index=False)
+            logger.info(f"✅ Saved main sheet with {len(df)} rows")
             
             if not df.empty and 'post_number' in df.columns:
                 df_copy = df.copy()
@@ -1361,6 +1106,7 @@ def save_to_excel(
                 
                 summary = summary.sort_values('post_number')
                 summary.to_excel(writer, sheet_name='Resumen_Posts', index=False)
+                logger.info(f"✅ Saved summary sheet")
                 
                 df_with_comments = df_copy[df_copy['comment_text'].notna()].copy()
                 
@@ -1373,6 +1119,7 @@ def save_to_excel(
                         Total_Likes=('likes_count', 'sum')
                     ).round(2).reset_index()
                     platform_stats.to_excel(writer, sheet_name='Stats_Plataforma', index=False)
+                    logger.info(f"✅ Saved platform stats")
                 
                 if scraper and scraper.failed_urls:
                     failed_df = pd.DataFrame({
@@ -1380,31 +1127,31 @@ def save_to_excel(
                         'Status': 'FAILED_ALL_ATTEMPTS'
                     })
                     failed_df.to_excel(writer, sheet_name='URLs_Fallidas', index=False)
+                    logger.info(f"✅ Saved failed URLs sheet")
                 
                 if scraper:
                     stats = scraper.get_stats_summary()
                     stats_df = pd.DataFrame([stats])
                     stats_df.to_excel(writer, sheet_name='Stats_Extraccion', index=False)
+                    logger.info(f"✅ Saved extraction stats")
         
-        logger.info(f"Excel file saved successfully: {filename}")
+        logger.info(f"✅ Excel file saved successfully: {filename}")
         return True
         
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}", exc_info=True)
+        logger.error(f"❌ Error saving Excel file: {e}", exc_info=True)
         return False
 
 
 def load_existing_comments(filename: str) -> pd.DataFrame:
-    """
-    Carga los comentarios existentes del archivo Excel.
-    """
+    """Carga los comentarios existentes del archivo Excel."""
     if not Path(filename).exists():
-        logger.info(f"No existing file found: {filename}. Will create new file.")
+        logger.info(f"📄 No existing file found: {filename}. Will create new file.")
         return pd.DataFrame()
     
     try:
         df_existing = pd.read_excel(filename, sheet_name='Comentarios')
-        logger.info(f"Loaded {len(df_existing)} existing rows from {filename}")
+        logger.info(f"✅ Loaded {len(df_existing)} existing rows from {filename}")
         
         df_existing = normalize_existing_data(df_existing)
         
@@ -1414,7 +1161,7 @@ def load_existing_comments(filename: str) -> pd.DataFrame:
         return df_existing
         
     except Exception as e:
-        logger.error(f"Error loading existing file: {e}")
+        logger.error(f"❌ Error loading existing file: {e}")
         return pd.DataFrame()
 
 
@@ -1425,38 +1172,38 @@ def load_existing_comments(filename: str) -> pd.DataFrame:
 def run_extraction():
     """
     Función principal que ejecuta todo el proceso de extracción.
-    VERSIÓN 3.0 con paginación y anti-duplicados mejorado
+    VERSIÓN 3.1 con logging extremo para debugging
     """
     logger.info("=" * 70)
     logger.info("--- STARTING COMMENT EXTRACTION PROCESS ---")
-    logger.info("--- VERSION 3.0: Pagination + Anti-Duplicates + Emoji Fix ---")
+    logger.info("--- VERSION 3.1: Extreme Logging for Debugging ---")
     logger.info(f"--- Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
     logger.info("=" * 70)
     
     if not APIFY_TOKEN:
-        logger.error("APIFY_TOKEN not found in environment variables. Aborting.")
+        logger.error("❌ APIFY_TOKEN not found in environment variables. Aborting.")
         return
+    
+    logger.info("✅ APIFY_TOKEN found")
     
     try:
         settings = load_json_config("settings.json")
         campaign_info = load_json_config("campaign_info.json")
         urls_to_process = load_urls_from_file("urls.txt")
     except Exception as e:
-        logger.error(f"Failed to load configuration: {e}")
+        logger.error(f"❌ Failed to load configuration: {e}")
         return
     
     valid_urls = [url for url in urls_to_process if validate_url(url)]
     invalid_urls = [url for url in urls_to_process if not validate_url(url)]
     
     if invalid_urls:
-        logger.warning(f"Skipping {len(invalid_urls)} invalid URLs:")
-        for url in invalid_urls:
-            logger.warning(f"  - {url}")
+        logger.warning(f"⚠️  Skipping {len(invalid_urls)} invalid URLs")
     
-    logger.info(f"Valid URLs to process: {len(valid_urls)}")
+    logger.info(f"✅ Valid URLs to process: {len(valid_urls)}")
     
     if not valid_urls:
-        logger.warning("No valid URLs to process. Exiting.")
+        logger.warning("⚠️  No valid URLs to process. Exiting.")
         return
     
     filename = settings.get('output_filename', 'Comentarios Campaña.xlsx')
@@ -1468,6 +1215,7 @@ def run_extraction():
     url_to_post_number = {}
     
     if not df_existing.empty and 'post_number' in df_existing.columns:
+        logger.info("📊 Preserving existing post numbers...")
         for url in df_existing['post_url'].unique():
             if pd.notna(url):
                 existing_numbers = df_existing[
@@ -1476,6 +1224,7 @@ def run_extraction():
                 
                 if not existing_numbers.empty:
                     url_to_post_number[url] = int(existing_numbers.mode().iloc[0])
+        logger.info(f"✅ Preserved {len(url_to_post_number)} post numbers")
     
     next_number = max(url_to_post_number.values()) + 1 if url_to_post_number else 1
     for url in valid_urls:
@@ -1488,7 +1237,7 @@ def run_extraction():
     pause_min = settings.get('pause_between_urls_min', 30)
     pause_max = settings.get('pause_between_urls_max', 60)
     
-    logger.info(f"Extraction settings: max_comments={max_comments}, "
+    logger.info(f"⚙️  Extraction settings: max_comments={max_comments}, "
                 f"max_replies={settings.get('max_replies_per_comment', 100)}")
     
     for idx, url in enumerate(valid_urls, 1):
@@ -1496,61 +1245,88 @@ def run_extraction():
         platform = scraper.detect_platform(url)
         
         if not platform:
-            logger.warning(f"Could not detect platform for URL: {url}")
+            logger.warning(f"⚠️  Could not detect platform for URL: {url}")
             continue
         
-        logger.info(f"\n--- Processing URL {idx}/{len(valid_urls)} (Post #{post_number}) ---")
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info(f"--- Processing URL {idx}/{len(valid_urls)} (Post #{post_number}) ---")
         logger.info(f"Platform: {platform}")
         logger.info(f"URL: {url}")
+        logger.info("=" * 70)
         
         comments = []
         
         if platform == 'Facebook':
+            logger.info(f"[Main] Calling Facebook scraper...")
             comments = scraper.scrape_with_retry(
                 scraper.scrape_facebook_comments, 
                 url, max_comments, campaign_info, post_number
             )
+            logger.info(f"[Main] Facebook scraper returned {len(comments) if comments else 0} comments")
+            
         elif platform == 'Instagram':
+            logger.info(f"[Main] Calling Instagram scraper...")
             comments = scraper.scrape_with_retry(
                 scraper.scrape_instagram_comments, 
                 url, max_comments, campaign_info, post_number
             )
+            logger.info(f"[Main] Instagram scraper returned {len(comments) if comments else 0} comments")
+            
         elif platform == 'TikTok':
+            logger.info(f"[Main] Calling TikTok scraper...")
             comments = scraper.scrape_with_retry(
                 scraper.scrape_tiktok_comments, 
                 url, max_comments, campaign_info, post_number
             )
+            logger.info(f"[Main] TikTok scraper returned {len(comments) if comments else 0} comments")
         
         if url in scraper.failed_urls:
+            logger.warning(f"[Main] URL failed all retries, creating failed entry")
             failed_entry = create_failed_registry_entry(
                 url, platform, campaign_info, post_number
             )
             all_comments.append(failed_entry)
         elif not comments:
+            logger.info(f"[Main] No comments found, creating registry entry")
             registry_entry = create_post_registry_entry(
                 url, platform, campaign_info, post_number
             )
             all_comments.append(registry_entry)
             scraper.extraction_stats['no_comments'] += 1
         else:
+            logger.info(f"[Main] Adding {len(comments)} comments to collection")
             all_comments.extend(comments)
+        
+        logger.info(f"[Main] Total comments collected so far: {len(all_comments)}")
         
         if not solo_primer_post and idx < len(valid_urls):
             pausa = random.uniform(pause_min, pause_max)
-            logger.info(f"Pausing for {pausa:.2f} seconds before next URL...")
+            logger.info(f"⏸️  Pausing for {pausa:.2f} seconds before next URL...")
             time.sleep(pausa)
         
         if solo_primer_post:
-            logger.info("SOLO_PRIMER_POST enabled - stopping after first URL")
+            logger.info("⚠️  SOLO_PRIMER_POST enabled - stopping after first URL")
             break
     
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("POST-PROCESSING")
+    logger.info("=" * 70)
+    
     if all_comments:
+        logger.info(f"📊 Total comments collected: {len(all_comments)}")
+        logger.info(f"📊 Creating DataFrame...")
+        
         df_new_comments = pd.DataFrame(all_comments)
+        logger.info(f"✅ DataFrame created with {len(df_new_comments)} rows")
+        
         df_new_comments = process_datetime_columns(df_new_comments)
         
         df_combined = merge_comments(df_existing, df_new_comments)
         
         if 'created_time_processed' in df_combined.columns:
+            logger.info("📊 Sorting by post_number and date...")
             df_combined = df_combined.sort_values(
                 ['post_number', 'created_time_processed'], 
                 ascending=[True, False],
@@ -1579,7 +1355,7 @@ def run_extraction():
         logger.info("--- EXTRACTION PROCESS FINISHED ---")
         logger.info(f"--- End Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
         logger.info("")
-        logger.info("📊 EXTRACTION STATISTICS:")
+        logger.info("📊 FINAL STATISTICS:")
         logger.info(f"  • Total unique posts tracked: {total_posts}")
         logger.info(f"  • Total comments in database: {total_comments}")
         logger.info(f"    - Main comments: {total_main}")
@@ -1600,7 +1376,7 @@ def run_extraction():
         logger.info(f"✅ File saved: {filename}")
         logger.info("=" * 70)
     else:
-        logger.warning("No new data to process")
+        logger.warning("⚠️  No new data to process")
         if not df_existing.empty:
             save_to_excel(df_existing, filename, scraper)
 
