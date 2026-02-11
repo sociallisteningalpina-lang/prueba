@@ -3,6 +3,7 @@
 """
 Script de Extracción de Comentarios de Redes Sociales
 Procesa URLs de Facebook, Instagram y TikTok usando APIs de Apify
+VERSIÓN MEJORADA: Incluye extracción de replies y jerarquía de comentarios
 """
 
 import pandas as pd
@@ -139,6 +140,7 @@ class SocialMediaScraper:
     """
     Clase para extraer comentarios de redes sociales usando Apify APIs.
     Soporta Facebook, Instagram y TikTok.
+    INCLUYE extracción de replies y jerarquía de comentarios.
     """
     
     def __init__(self, apify_token: str, settings: dict):
@@ -239,7 +241,8 @@ class SocialMediaScraper:
     def _deduplicate_items(self, items: List[dict], platform: str) -> List[dict]:
         """
         Elimina duplicados de los items devueltos por Apify.
-    
+        Prioriza usar IDs únicos cuando estén disponibles.
+        
         Args:
             items: Lista de items de Apify
             platform: Nombre de la plataforma
@@ -255,24 +258,31 @@ class SocialMediaScraper:
         duplicates_found = 0
     
         for item in items:
-            # Crear hash basado en campos únicos según plataforma
+            # ✅ PRIORIDAD 1: Usar ID único si existe
+            unique_key = None
+            
             if platform == 'Facebook':
-                # Para Facebook: usar text + date
-                text = str(item.get('text', ''))
-                date = str(item.get('date', item.get('createdTime', '')))
-                unique_key = f"{text}|{date}"
+                comment_id = item.get('id', item.get('commentId'))
+                if comment_id:
+                    unique_key = f"fb_id_{comment_id}"
+                else:
+                    text = str(item.get('text', ''))
+                    date = str(item.get('date', item.get('createdTime', '')))
+                    unique_key = f"{text}|{date}"
         
             elif platform == 'Instagram':
-                # Para Instagram: usar text + timestamp
-                text = str(item.get('text', ''))
-                timestamp = str(item.get('timestamp', item.get('createdTime', '')))
-                unique_key = f"{text}|{timestamp}"
+                comment_id = item.get('id', item.get('pk'))
+                if comment_id:
+                    unique_key = f"ig_id_{comment_id}"
+                else:
+                    text = str(item.get('text', ''))
+                    timestamp = str(item.get('timestamp', item.get('createdTime', '')))
+                    unique_key = f"{text}|{timestamp}"
         
             elif platform == 'TikTok':
-                # Para TikTok: usar cid (comment id) si existe, sino text + createTime
                 cid = item.get('cid')
                 if cid:
-                    unique_key = f"cid_{cid}"
+                    unique_key = f"tt_cid_{cid}"
                 else:
                     text = str(item.get('text', ''))
                     create_time = str(item.get('createTime', ''))
@@ -369,20 +379,21 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-        """Extrae comentarios de Facebook"""
+        """Extrae comentarios de Facebook incluyendo replies"""
         try:
             logger.info(f"Processing Facebook Post {post_number}: {url}")
         
-            # ✅ Parámetros corregidos para Facebook
+            # ✅ Parámetros para Facebook con replies habilitados
             run_input = {
                 "startUrls": [{"url": self.clean_url(url)}],
                 "maxComments": max_comments,
-                "maxPostComments": max_comments,  # Redundancia para asegurar límite
-                "commentsMode": "RANKED_UNFILTERED",  # Obtener todos los comentarios
-                "scrapeReplies": True  # Incluir respuestas si quieres
+                "maxPostComments": max_comments,
+                "commentsMode": "RANKED_UNFILTERED",
+                "scrapeReplies": True,
+                "maxCommentReplies": 100  # ✅ NUEVO - Límite de replies por comentario
             }
             
-            logger.info(f"Facebook run_input: {run_input}")  # Debug
+            logger.info(f"Facebook run_input: {run_input}")
         
             run = self.client.actor("apify/facebook-comments-scraper").call(
                 run_input=run_input
@@ -395,9 +406,9 @@ class SocialMediaScraper:
                 )
                 return []
         
-            # Obtener items de Apify
+            # Obtener items de Apify - aumentar límite para incluir replies
             dataset = self.client.dataset(run["defaultDatasetId"])
-            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items_response = dataset.list_items(clean=True, limit=max_comments * 2)
             items = items_response.items
         
             logger.info(f"Extraction complete: {len(items)} items found.")
@@ -419,21 +430,21 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-        """Extrae comentarios de Instagram"""
+        """Extrae comentarios de Instagram incluyendo replies"""
         try:
             logger.info(f"Processing Instagram Post {post_number}: {url}")
         
-            # ✅ Parámetros corregidos para Instagram
+            # ✅ Parámetros para Instagram
             run_input = {
                 "directUrls": [url],
                 "resultsType": "comments",
                 "resultsLimit": max_comments,
-                "maxComments": max_comments,  # Asegurar límite
-                "searchLimit": max_comments,  # Otro parámetro de límite
-                "addParentData": False  # Optimizar velocidad
+                "maxComments": max_comments,
+                "searchLimit": max_comments,
+                "addParentData": False
             }
             
-            logger.info(f"Instagram run_input: {run_input}")  # Debug
+            logger.info(f"Instagram run_input: {run_input}")
         
             run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
             run_status = self._wait_for_run_finish(run)
@@ -446,7 +457,7 @@ class SocialMediaScraper:
         
             # Obtener items de Apify
             dataset = self.client.dataset(run["defaultDatasetId"])
-            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items_response = dataset.list_items(clean=True, limit=max_comments * 2)
             items = items_response.items
         
             logger.info(f"Extraction complete: {len(items)} items found.")
@@ -468,20 +479,19 @@ class SocialMediaScraper:
         campaign_info: dict = None, 
         post_number: int = 1
     ) -> List[dict]:
-        """Extrae comentarios de TikTok"""
+        """Extrae comentarios de TikTok incluyendo replies"""
         try:
             logger.info(f"Processing TikTok Post {post_number}: {url}")
         
-            # ✅ Parámetros corregidos para TikTok
+            # ✅ Parámetros para TikTok con replies habilitados
             run_input = {
                 "postURLs": [self.clean_url(url)],
                 "maxCommentsPerPost": max_comments,
-                "commentsPerPost": max_comments,  # Redundancia
-                "maxRepliesPerComment": 0,  # Si solo quieres comentarios principales
-                # "maxRepliesPerComment": 100,  # Si quieres respuestas también
+                "commentsPerPost": max_comments,
+                "maxRepliesPerComment": 100  # ✅ CAMBIO CRÍTICO - Era 0, ahora 100
             }
             
-            logger.info(f"TikTok run_input: {run_input}")  # Debug
+            logger.info(f"TikTok run_input: {run_input}")
         
             run = self.client.actor("clockworks/tiktok-comments-scraper").call(
                 run_input=run_input
@@ -494,9 +504,9 @@ class SocialMediaScraper:
                 )
                 return []
         
-            # Obtener items de Apify
+            # Obtener items de Apify - aumentar límite para incluir replies
             dataset = self.client.dataset(run["defaultDatasetId"])
-            items_response = dataset.list_items(clean=True, limit=max_comments)
+            items_response = dataset.list_items(clean=True, limit=max_comments * 2)
             items = items_response.items
         
             logger.info(f"Extraction complete: {len(items)} comments found.")
@@ -518,7 +528,7 @@ class SocialMediaScraper:
         post_number: int, 
         campaign_info: dict
     ) -> List[dict]:
-        """Procesa los resultados extraídos de Facebook"""
+        """Procesa los resultados extraídos de Facebook incluyendo replies"""
         processed = []
         possible_date_fields = [
             'createdTime', 'timestamp', 'publishedTime', 
@@ -532,6 +542,21 @@ class SocialMediaScraper:
                     created_time = comment[field]
                     break
             
+            # ✅ NUEVO - Detectar si es reply y capturar parent info
+            is_reply = False
+            parent_comment_id = None
+            reply_level = 0
+            
+            # Facebook puede usar diferentes campos para indicar replies
+            if 'parentCommentId' in comment and comment['parentCommentId']:
+                is_reply = True
+                parent_comment_id = comment['parentCommentId']
+                reply_level = 1
+            elif 'replyToCommentId' in comment and comment['replyToCommentId']:
+                is_reply = True
+                parent_comment_id = comment['replyToCommentId']
+                reply_level = 1
+            
             comment_data = {
                 **campaign_info,
                 'post_url': url,
@@ -544,13 +569,15 @@ class SocialMediaScraper:
                 'created_time': created_time,
                 'likes_count': comment.get('likesCount', 0),
                 'replies_count': comment.get('repliesCount', 0),
-                'is_reply': False,
-                'parent_comment_id': None,
+                'is_reply': is_reply,
+                'parent_comment_id': parent_comment_id,
+                'reply_level': reply_level,  # ✅ NUEVO
+                'comment_id': comment.get('id', comment.get('commentId')),  # ✅ NUEVO
                 'created_time_raw': str(comment)[:500]
             }
             processed.append(comment_data)
         
-        logger.info(f"Processed {len(processed)} Facebook comments.")
+        logger.info(f"Processed {len(processed)} Facebook comments/replies.")
         return processed
 
     def _process_instagram_results(
@@ -560,7 +587,7 @@ class SocialMediaScraper:
         post_number: int, 
         campaign_info: dict
     ) -> List[dict]:
-        """Procesa los resultados extraídos de Instagram"""
+        """Procesa los resultados extraídos de Instagram incluyendo replies"""
         processed = []
         possible_date_fields = [
             'timestamp', 'createdTime', 'publishedAt', 
@@ -581,6 +608,16 @@ class SocialMediaScraper:
                         created_time = comment[field]
                         break
                 
+                # ✅ NUEVO - Instagram puede tener replies anidadas
+                is_reply = False
+                parent_comment_id = None
+                reply_level = 0
+                
+                if 'parentCommentId' in comment and comment['parentCommentId']:
+                    is_reply = True
+                    parent_comment_id = comment['parentCommentId']
+                    reply_level = 1
+                
                 author = comment.get('ownerUsername', '')
                 comment_data = {
                     **campaign_info,
@@ -593,14 +630,16 @@ class SocialMediaScraper:
                     'comment_text': self.fix_encoding(comment.get('text')),
                     'created_time': created_time,
                     'likes_count': comment.get('likesCount', 0),
-                    'replies_count': 0,
-                    'is_reply': False,
-                    'parent_comment_id': None,
+                    'replies_count': comment.get('childCommentCount', 0),  # ✅ MEJORADO
+                    'is_reply': is_reply,
+                    'parent_comment_id': parent_comment_id,
+                    'reply_level': reply_level,  # ✅ NUEVO
+                    'comment_id': comment.get('id', comment.get('pk')),  # ✅ NUEVO
                     'created_time_raw': str(comment)[:500]
                 }
                 processed.append(comment_data)
         
-        logger.info(f"Processed {len(processed)} Instagram comments.")
+        logger.info(f"Processed {len(processed)} Instagram comments/replies.")
         return processed
 
     def _process_tiktok_results(
@@ -610,11 +649,17 @@ class SocialMediaScraper:
         post_number: int, 
         campaign_info: dict
     ) -> List[dict]:
-        """Procesa los resultados extraídos de TikTok"""
+        """Procesa los resultados extraídos de TikTok incluyendo replies"""
         processed = []
         
         for comment in items:
             author_id = comment.get('user', {}).get('uniqueId', '')
+            
+            # ✅ TikTok tiene estructura clara de replies
+            is_reply = 'replyToId' in comment and comment['replyToId']
+            parent_comment_id = comment.get('replyToId')
+            reply_level = 1 if is_reply else 0
+            
             comment_data = {
                 **campaign_info,
                 'post_url': url,
@@ -629,13 +674,15 @@ class SocialMediaScraper:
                 'created_time': comment.get('createTime'),
                 'likes_count': comment.get('diggCount', 0),
                 'replies_count': comment.get('replyCommentTotal', 0),
-                'is_reply': 'replyToId' in comment,
-                'parent_comment_id': comment.get('replyToId'),
+                'is_reply': is_reply,
+                'parent_comment_id': parent_comment_id,
+                'reply_level': reply_level,  # ✅ NUEVO
+                'comment_id': comment.get('cid'),  # ✅ NUEVO
                 'created_time_raw': str(comment)[:500]
             }
             processed.append(comment_data)
         
-        logger.info(f"Processed {len(processed)} TikTok comments.")
+        logger.info(f"Processed {len(processed)} TikTok comments/replies.")
         return processed
 
     def get_stats_summary(self) -> dict:
@@ -679,6 +726,8 @@ def create_post_registry_entry(
         'replies_count': 0,
         'is_reply': False,
         'parent_comment_id': None,
+        'reply_level': 0,
+        'comment_id': None,
         'created_time_raw': None,
         'extraction_status': 'NO_COMMENTS'
     }
@@ -716,6 +765,8 @@ def create_failed_registry_entry(
         'replies_count': 0,
         'is_reply': False,
         'parent_comment_id': None,
+        'reply_level': 0,
+        'comment_id': None,
         'created_time_raw': None,
         'extraction_status': 'FAILED'
     }
@@ -843,6 +894,13 @@ def normalize_existing_data(df: pd.DataFrame) -> pd.DataFrame:
             lambda row: 'NO_COMMENTS' if pd.isna(row.get('comment_text')) else None,
             axis=1
         )
+    
+    # Asegurar que nuevos campos existen con valores por defecto
+    if 'reply_level' not in df.columns:
+        df['reply_level'] = 0
+    
+    if 'comment_id' not in df.columns:
+        df['comment_id'] = None
     
     logger.info(f"Normalized {len(df)} existing rows")
     return df
@@ -1040,6 +1098,17 @@ def save_to_excel(
                         Total_Likes=('likes_count', 'sum')
                     ).round(2).reset_index()
                     platform_stats.to_excel(writer, sheet_name='Stats_Plataforma', index=False)
+                
+                # ✅ NUEVO - Estadísticas de replies
+                if 'is_reply' in df_with_comments.columns:
+                    reply_stats = pd.DataFrame({
+                        'Tipo': ['Comentarios Principales', 'Replies'],
+                        'Total': [
+                            df_with_comments[~df_with_comments['is_reply']].shape[0],
+                            df_with_comments[df_with_comments['is_reply']].shape[0]
+                        ]
+                    })
+                    reply_stats.to_excel(writer, sheet_name='Stats_Replies', index=False)
                 
                 # URLs con problemas
                 if scraper and scraper.failed_urls:
@@ -1262,12 +1331,13 @@ def run_extraction():
                 na_position='last'
             )
         
-        # Organizar columnas
+        # ✅ Organizar columnas - con nuevos campos de replies
         final_columns = [
             'post_number', 'platform', 'campaign_name', 'post_url', 
-            'post_url_original', 'author_name', 'comment_text', 'created_time',
-            'created_time_processed', 'fecha_comentario', 'hora_comentario', 
-            'likes_count', 'replies_count', 'is_reply', 'author_url', 
+            'post_url_original', 'author_name', 'comment_text', 
+            'is_reply', 'parent_comment_id', 'reply_level', 'comment_id',
+            'created_time', 'created_time_processed', 'fecha_comentario', 
+            'hora_comentario', 'likes_count', 'replies_count', 'author_url', 
             'extraction_status', 'created_time_raw'
         ]
         existing_cols = [col for col in final_columns if col in df_combined.columns]
@@ -1277,11 +1347,22 @@ def run_extraction():
         save_to_excel(df_combined, filename, scraper)
         
         # ====================================================================
-        # 7. REPORTE FINAL
+        # 7. REPORTE FINAL - ✅ Con estadísticas de replies
         # ====================================================================
         
         total_comments = df_combined['comment_text'].notna().sum()
         total_posts = df_combined['post_number'].nunique()
+        
+        # ✅ NUEVO - Estadísticas de comentarios principales vs replies
+        total_main_comments = df_combined[
+            (df_combined['comment_text'].notna()) & 
+            (~df_combined['is_reply'])
+        ].shape[0]
+        total_replies = df_combined[
+            (df_combined['comment_text'].notna()) & 
+            (df_combined['is_reply'] == True)
+        ].shape[0]
+        
         stats = scraper.get_stats_summary()
         
         logger.info("=" * 70)
@@ -1291,6 +1372,8 @@ def run_extraction():
         logger.info("📊 EXTRACTION STATISTICS:")
         logger.info(f"  • Total unique posts tracked: {total_posts}")
         logger.info(f"  • Total comments in database: {total_comments}")
+        logger.info(f"  •   ↳ Main comments: {total_main_comments}")
+        logger.info(f"  •   ↳ Replies: {total_replies}")
         logger.info(f"  • Extraction attempts: {stats['total_attempts']}")
         logger.info(f"  • Successful extractions: {stats['successful']}")
         logger.info(f"  • Failed extractions: {stats['failed']}")
