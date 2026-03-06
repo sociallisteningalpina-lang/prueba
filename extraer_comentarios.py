@@ -3,6 +3,7 @@
 """
 Script de Extracción de Comentarios de Redes Sociales
 Procesa URLs de Facebook, Instagram y TikTok usando APIs de Apify
+Incluye extracción profunda de respuestas (replies)
 """
 
 import pandas as pd
@@ -52,19 +53,14 @@ def load_json_config(filename: str) -> dict:
         logger.error(f"Invalid JSON in {config_path}: {e}")
         raise
 
-
 def load_urls_from_file(filename: str = "urls.txt") -> List[str]:
-    """
-    Carga URLs desde un archivo de texto.
-    Ignora líneas vacías y líneas que empiezan con #
-    """
+    """Carga URLs desde un archivo de texto."""
     urls_path = CONFIG_DIR / filename
     try:
         with open(urls_path, 'r', encoding='utf-8') as f:
             urls = []
             for line in f:
                 line = line.strip()
-                # Ignorar líneas vacías y comentarios
                 if line and not line.startswith('#'):
                     urls.append(line)
             logger.info(f"Loaded {len(urls)} URLs from {urls_path}")
@@ -84,40 +80,27 @@ def validate_url(url: str) -> bool:
         return False
     
     url = str(url).strip()
-    
-    # URLs genéricas que deben ser filtradas
     invalid_urls = [
-        'https://www.facebook.com/',
-        'https://www.facebook.com',
-        'https://facebook.com/',
-        'https://facebook.com',
-        'https://instagram.com/',
-        'https://www.instagram.com/',
-        'https://tiktok.com/',
-        'https://www.tiktok.com/'
+        'https://www.facebook.com/', 'https://www.facebook.com',
+        'https://facebook.com/', 'https://facebook.com',
+        'https://instagram.com/', 'https://www.instagram.com/',
+        'https://tiktok.com/', 'https://www.tiktok.com/'
     ]
     
-    # Verificar que no sea una URL genérica
     if url in invalid_urls:
         return False
-    
-    # Verificar longitud mínima (URLs válidas son más largas)
     if len(url) < 30:
         return False
-    
     return True
-
 
 def validate_comment_data(comment: dict) -> Tuple[bool, Optional[str]]:
     """Valida que un comentario tenga los campos mínimos requeridos."""
     required_fields = ['platform', 'post_url', 'comment_text']
-    
     for field in required_fields:
         if field not in comment:
             return False, f"Missing required field: {field}"
         if pd.isna(comment[field]) or str(comment[field]).strip() == '':
             return False, f"Empty required field: {field}"
-    
     return True, None
 
 
@@ -126,10 +109,7 @@ def validate_comment_data(comment: dict) -> Tuple[bool, Optional[str]]:
 # ============================================================================
 
 class SocialMediaScraper:
-    """
-    Clase para extraer comentarios de redes sociales usando Apify APIs.
-    Soporta Facebook, Instagram y TikTok.
-    """
+    """Clase para extraer comentarios de redes sociales usando Apify APIs."""
     
     def __init__(self, apify_token: str, settings: dict):
         self.client = ApifyClient(apify_token)
@@ -144,27 +124,18 @@ class SocialMediaScraper:
         }
 
     def detect_platform(self, url: str) -> Optional[str]:
-        if pd.isna(url) or not url:
-            return None
-        
+        if pd.isna(url) or not url: return None
         url = str(url).lower()
-        
-        if any(d in url for d in ['facebook.com', 'fb.com', 'fb.me']):
-            return 'Facebook'
-        if 'instagram.com' in url:
-            return 'Instagram'
-        if 'tiktok.com' in url or 'vt.tiktok.com' in url:
-            return 'TikTok'
-        
+        if any(d in url for d in ['facebook.com', 'fb.com', 'fb.me']): return 'Facebook'
+        if 'instagram.com' in url: return 'Instagram'
+        if 'tiktok.com' in url or 'vt.tiktok.com' in url: return 'TikTok'
         return None
 
     def clean_url(self, url: str) -> str:
         return str(url).split('?')[0] if '?' in str(url) else str(url)
 
     def fix_encoding(self, text: str) -> str:
-        if pd.isna(text) or text == '':
-            return ''
-        
+        if pd.isna(text) or text == '': return ''
         try:
             text = str(text)
             text = html.unescape(text)
@@ -175,14 +146,12 @@ class SocialMediaScraper:
             return str(text)
 
     def _wait_for_run_finish(self, run: dict) -> Optional[dict]:
-        """Espera a que termine la ejecución del scraper de Apify con timeout extendido."""
         logger.info("Scraper initiated, waiting for results. This may take a while for large data volumes...")
         max_wait_time = 7200  # 2 horas
         start_time = time.time()
         
         while True:
             run_status = self.client.run(run["id"]).get()
-            
             if run_status["status"] in ["SUCCEEDED", "FAILED", "TIMED-OUT"]:
                 return run_status
             
@@ -197,9 +166,13 @@ class SocialMediaScraper:
             time.sleep(10)
 
     def _flatten_replies(self, items: List[dict]) -> List[dict]:
-        """Busca respuestas anidadas en diferentes formatos de Apify y las aplana."""
+        """Busca respuestas anidadas usando un diccionario exhaustivo de llaves conocidas."""
         flat_list = []
-        reply_keys = ['replies', 'latestComments', 'childComments', 'comments']
+        reply_keys = [
+            'replies', 'latestComments', 'childComments', 'comments', 
+            'answers', 'threaded_comments', 'edge_threaded_comments', 
+            'nestedComments', 'responses'
+        ]
         
         def extract_recursive(comment_obj, parent_id=None):
             if not isinstance(comment_obj, dict):
@@ -207,28 +180,40 @@ class SocialMediaScraper:
                 
             curr_comment = dict(comment_obj)
             
+            is_reply_flag = (
+                curr_comment.get('is_reply', False) or 
+                bool(parent_id) or 
+                bool(curr_comment.get('replyToId')) or 
+                bool(curr_comment.get('parentCommentId')) or
+                bool(curr_comment.get('parentId'))
+            )
+            
             if parent_id:
                 curr_comment['is_reply'] = True
                 curr_comment['replyToId'] = parent_id
+            elif is_reply_flag:
+                curr_comment['is_reply'] = True
                 
-            flat_list.append(curr_comment)
-            
             current_id = curr_comment.get('id') or curr_comment.get('cid') or curr_comment.get('pk')
             
+            children_to_process = []
             for key in reply_keys:
                 if key in curr_comment and isinstance(curr_comment[key], list):
-                    for child in curr_comment[key]:
-                        extract_recursive(child, parent_id=current_id)
-                        
+                    children_to_process.extend(curr_comment[key])
+                    del curr_comment[key]
+                    
+            flat_list.append(curr_comment)
+            
+            for child in children_to_process:
+                extract_recursive(child, parent_id=current_id)
+                
         for item in items:
             extract_recursive(item)
             
         return flat_list
 
     def _deduplicate_items(self, items: List[dict], platform: str) -> List[dict]:
-        if not items:
-            return items
-    
+        if not items: return items
         seen_hashes = set()
         unique_items = []
         duplicates_found = 0
@@ -244,18 +229,15 @@ class SocialMediaScraper:
                 unique_key = f"{text}|{timestamp}"
             elif platform == 'TikTok':
                 cid = item.get('cid')
-                if cid:
-                    unique_key = f"cid_{cid}"
+                if cid: unique_key = f"cid_{cid}"
                 else:
                     text = str(item.get('text', ''))
                     create_time = str(item.get('createTime', ''))
                     unique_key = f"{text}|{create_time}"
             else:
-                text = str(item.get('text', ''))
-                unique_key = text
+                unique_key = str(item.get('text', ''))
     
             item_hash = hashlib.md5(unique_key.encode('utf-8')).hexdigest()
-    
             if item_hash not in seen_hashes:
                 seen_hashes.add(item_hash)
                 unique_items.append(item)
@@ -263,33 +245,22 @@ class SocialMediaScraper:
                 duplicates_found += 1
     
         if duplicates_found > 0:
-            logger.warning(f"⚠️  Removed {duplicates_found} duplicate items from Apify response")
-    
+            logger.warning(f"⚠️ Removed {duplicates_found} duplicate items from Apify response")
         return unique_items
 
-    def scrape_with_retry(
-        self, 
-        scrape_function, 
-        url: str, 
-        max_comments: int, 
-        campaign_info: dict, 
-        post_number: int
-    ) -> List[dict]:
+    def scrape_with_retry(self, scrape_function, url: str, max_comments: int, campaign_info: dict, post_number: int) -> List[dict]:
         max_retries = self.settings.get('max_retries', 3)
         self.extraction_stats['total_attempts'] += 1
         
         for attempt in range(max_retries):
             try:
                 result = scrape_function(url, max_comments, campaign_info, post_number)
-                
                 if result:
                     valid_comments = []
                     for comment in result:
                         is_valid, error_msg = validate_comment_data(comment)
-                        if is_valid:
-                            valid_comments.append(comment)
-                        else:
-                            self.extraction_stats['invalid_comments'] += 1
+                        if is_valid: valid_comments.append(comment)
+                        else: self.extraction_stats['invalid_comments'] += 1
                     
                     if valid_comments:
                         self.extraction_stats['successful'] += 1
@@ -299,40 +270,31 @@ class SocialMediaScraper:
                 
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 30
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{max_retries} failed. "
-                        f"Waiting {wait_time} seconds before retry..."
-                    )
+                    logger.warning(f"Attempt {attempt + 1}/{max_retries} failed. Waiting {wait_time}s...")
                     time.sleep(wait_time)
-                    
             except Exception as e:
                 logger.error(f"Attempt {attempt + 1}/{max_retries} failed with error: {e}")
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 30
-                    time.sleep(wait_time)
+                if attempt < max_retries - 1: time.sleep((attempt + 1) * 30)
         
         self.failed_urls.append(url)
         self.extraction_stats['failed'] += 1
-        logger.error(f"All {max_retries} attempts failed for URL: {url}")
+        logger.error(f"All attempts failed for URL: {url}")
         return []
 
     def scrape_facebook_comments(self, url: str, max_comments: int = 500, campaign_info: dict = None, post_number: int = 1) -> List[dict]:
         try:
             logger.info(f"Processing Facebook Post {post_number}: {url}")
-            
             run_input = {
                 "startUrls": [{"url": self.clean_url(url)}], 
                 "maxComments": max_comments,
                 "includeReplies": True,
+                "includeNestedComments": True,
                 "viewOption": "RANKED_UNFILTERED"
             }
             
             run = self.client.actor("apify/facebook-comments-scraper").call(run_input=run_input)
             run_status = self._wait_for_run_finish(run)
-            
-            if not run_status or run_status["status"] != "SUCCEEDED":
-                logger.error(f"Facebook extraction failed. Status: {run_status.get('status', 'UNKNOWN')}")
-                return []
+            if not run_status or run_status["status"] != "SUCCEEDED": return []
             
             dataset = self.client.dataset(run["defaultDatasetId"])
             items = list(dataset.iterate_items(clean=True))
@@ -340,30 +302,24 @@ class SocialMediaScraper:
             
             items = self._flatten_replies(items)
             items = self._deduplicate_items(items, platform='Facebook')
-            logger.info(f"After flattening & deduplication: {len(items)} unique items.")
-            
             return self._process_facebook_results(items, url, post_number, campaign_info)
         except Exception as e:
-            logger.error(f"Error in scrape_facebook_comments: {e}")
-            raise
+            logger.error(f"Error in FB scrape: {e}"); raise
 
     def scrape_instagram_comments(self, url: str, max_comments: int = 500, campaign_info: dict = None, post_number: int = 1) -> List[dict]:
         try:
             logger.info(f"Processing Instagram Post {post_number}: {url}")
-            
             run_input = {
                 "directUrls": [url], 
                 "resultsType": "comments", 
                 "resultsLimit": max_comments,
-                "scrapeReplies": True
+                "scrapeReplies": True,
+                "includeReplies": True
             }
             
             run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
             run_status = self._wait_for_run_finish(run)
-            
-            if not run_status or run_status["status"] != "SUCCEEDED":
-                logger.error(f"Instagram extraction failed. Status: {run_status.get('status', 'UNKNOWN')}")
-                return []
+            if not run_status or run_status["status"] != "SUCCEEDED": return []
             
             dataset = self.client.dataset(run["defaultDatasetId"])
             items = list(dataset.iterate_items(clean=True))
@@ -371,29 +327,24 @@ class SocialMediaScraper:
             
             items = self._flatten_replies(items)
             items = self._deduplicate_items(items, platform='Instagram')
-            logger.info(f"After flattening & deduplication: {len(items)} unique items.")
-            
             return self._process_instagram_results(items, url, post_number, campaign_info)
         except Exception as e:
-            logger.error(f"Error in scrape_instagram_comments: {e}")
-            raise
+            logger.error(f"Error in IG scrape: {e}"); raise
 
     def scrape_tiktok_comments(self, url: str, max_comments: int = 500, campaign_info: dict = None, post_number: int = 1) -> List[dict]:
         try:
             logger.info(f"Processing TikTok Post {post_number}: {url}")
-            
             run_input = {
                 "postURLs": [self.clean_url(url)], 
                 "maxCommentsPerPost": max_comments,
-                "scrapeReplies": True
+                "scrapeReplies": True,
+                "replies": True,
+                "includeReplies": True
             }
             
             run = self.client.actor("clockworks/tiktok-comments-scraper").call(run_input=run_input)
             run_status = self._wait_for_run_finish(run)
-            
-            if not run_status or run_status["status"] != "SUCCEEDED":
-                logger.error(f"TikTok extraction failed. Status: {run_status.get('status', 'UNKNOWN')}")
-                return []
+            if not run_status or run_status["status"] != "SUCCEEDED": return []
             
             dataset = self.client.dataset(run["defaultDatasetId"])
             items = list(dataset.iterate_items(clean=True))
@@ -401,102 +352,61 @@ class SocialMediaScraper:
             
             items = self._flatten_replies(items)
             items = self._deduplicate_items(items, platform='TikTok')
-            logger.info(f"After flattening & deduplication: {len(items)} unique items.")
-            
             return self._process_tiktok_results(items, url, post_number, campaign_info)
         except Exception as e:
-            logger.error(f"Error in scrape_tiktok_comments: {e}")
-            raise
+            logger.error(f"Error in TikTok scrape: {e}"); raise
 
     def _process_facebook_results(self, items: List[dict], url: str, post_number: int, campaign_info: dict) -> List[dict]:
         processed = []
         possible_date_fields = ['createdTime', 'timestamp', 'publishedTime', 'date', 'createdAt', 'publishedAt']
-        
         for comment in items:
-            created_time = None
-            for field in possible_date_fields:
-                if field in comment and comment[field]:
-                    created_time = comment[field]
-                    break
+            created_time = next((comment[f] for f in possible_date_fields if f in comment and comment[f]), None)
+            parent_id = comment.get('replyToId') or comment.get('parentId') or comment.get('parentCommentId')
             
-            comment_data = {
-                **campaign_info,
-                'post_url': url,
-                'post_url_original': url,
-                'post_number': post_number,
-                'platform': 'Facebook',
-                'author_name': self.fix_encoding(comment.get('authorName')),
-                'author_url': comment.get('authorUrl'),
-                'comment_text': self.fix_encoding(comment.get('text')),
-                'created_time': created_time,
-                'likes_count': comment.get('likesCount', 0),
-                'replies_count': comment.get('repliesCount', 0),
-                'is_reply': comment.get('is_reply', False),
-                'parent_comment_id': comment.get('replyToId'),
-                'created_time_raw': str(comment)[:500]
-            }
-            processed.append(comment_data)
-        
-        logger.info(f"Processed {len(processed)} Facebook comments.")
+            processed.append({
+                **campaign_info, 'post_url': url, 'post_url_original': url, 'post_number': post_number,
+                'platform': 'Facebook', 'author_name': self.fix_encoding(comment.get('authorName')),
+                'author_url': comment.get('authorUrl'), 'comment_text': self.fix_encoding(comment.get('text')),
+                'created_time': created_time, 'likes_count': comment.get('likesCount', 0),
+                'replies_count': comment.get('repliesCount', 0), 
+                'is_reply': comment.get('is_reply', bool(parent_id)),
+                'parent_comment_id': parent_id, 'created_time_raw': str(comment)[:500]
+            })
         return processed
 
     def _process_instagram_results(self, items: List[dict], url: str, post_number: int, campaign_info: dict) -> List[dict]:
         processed = []
         possible_date_fields = ['timestamp', 'createdTime', 'publishedAt', 'date', 'createdAt', 'taken_at']
-        
         for comment in items:
-            created_time = None
-            for field in possible_date_fields:
-                if field in comment and comment[field]:
-                    created_time = comment[field]
-                    break
-            
+            created_time = next((comment[f] for f in possible_date_fields if f in comment and comment[f]), None)
             author = comment.get('ownerUsername', '')
-            comment_data = {
-                **campaign_info,
-                'post_url': url,
-                'post_url_original': url,
-                'post_number': post_number,
-                'platform': 'Instagram',
-                'author_name': self.fix_encoding(author),
-                'author_url': f"https://instagram.com/{author}",
-                'comment_text': self.fix_encoding(comment.get('text')),
-                'created_time': created_time,
-                'likes_count': comment.get('likesCount', 0),
-                'replies_count': 0,
-                'is_reply': comment.get('is_reply', False),
-                'parent_comment_id': comment.get('replyToId'),
-                'created_time_raw': str(comment)[:500]
-            }
-            processed.append(comment_data)
-        
-        logger.info(f"Processed {len(processed)} Instagram comments.")
+            parent_id = comment.get('replyToId') or comment.get('parentCommentId')
+            
+            processed.append({
+                **campaign_info, 'post_url': url, 'post_url_original': url, 'post_number': post_number,
+                'platform': 'Instagram', 'author_name': self.fix_encoding(author),
+                'author_url': f"https://instagram.com/{author}", 'comment_text': self.fix_encoding(comment.get('text')),
+                'created_time': created_time, 'likes_count': comment.get('likesCount', 0),
+                'replies_count': 0, 'is_reply': comment.get('is_reply', bool(parent_id)),
+                'parent_comment_id': parent_id, 'created_time_raw': str(comment)[:500]
+            })
         return processed
 
     def _process_tiktok_results(self, items: List[dict], url: str, post_number: int, campaign_info: dict) -> List[dict]:
         processed = []
-        
         for comment in items:
             author_id = comment.get('user', {}).get('uniqueId', '')
-            comment_data = {
-                **campaign_info,
-                'post_url': url,
-                'post_url_original': url,
-                'post_number': post_number,
-                'platform': 'TikTok',
-                'author_name': self.fix_encoding(comment.get('user', {}).get('nickname')),
-                'author_url': f"https://www.tiktok.com/@{author_id}",
-                'comment_text': self.fix_encoding(comment.get('text')),
-                'created_time': comment.get('createTime'),
-                'likes_count': comment.get('diggCount', 0),
-                'replies_count': comment.get('replyCommentTotal', 0),
-                'is_reply': comment.get('is_reply', 'replyToId' in comment),
-                'parent_comment_id': comment.get('replyToId'),
-                'created_time_raw': str(comment)[:500]
-            }
-            processed.append(comment_data)
-        
-        logger.info(f"Processed {len(processed)} TikTok comments.")
+            parent_id = comment.get('replyToId') or comment.get('reply_comment_id')
+            
+            processed.append({
+                **campaign_info, 'post_url': url, 'post_url_original': url, 'post_number': post_number,
+                'platform': 'TikTok', 'author_name': self.fix_encoding(comment.get('user', {}).get('nickname')),
+                'author_url': f"https://www.tiktok.com/@{author_id}", 'comment_text': self.fix_encoding(comment.get('text')),
+                'created_time': comment.get('createTime'), 'likes_count': comment.get('diggCount', 0),
+                'replies_count': comment.get('replyCommentTotal', 0), 
+                'is_reply': comment.get('is_reply', bool(parent_id)),
+                'parent_comment_id': parent_id, 'created_time_raw': str(comment)[:500]
+            })
         return processed
 
     def get_stats_summary(self) -> dict:
@@ -831,7 +741,7 @@ def run_extraction():
         
         if scraper.failed_urls:
             logger.warning("")
-            logger.warning(f"⚠️  FAILED URLs ({len(scraper.failed_urls)}):")
+            logger.warning(f"⚠️ FAILED URLs ({len(scraper.failed_urls)}):")
             for failed_url in scraper.failed_urls:
                 logger.warning(f"  - {failed_url}")
         
@@ -845,4 +755,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
