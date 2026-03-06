@@ -280,14 +280,14 @@ class SocialMediaScraper:
         self.extraction_stats['failed'] += 1
         logger.error(f"All attempts failed for URL: {url}")
         return []
-
+        
     def scrape_facebook_comments(self, url: str, max_comments: int = 500, campaign_info: dict = None, post_number: int = 1) -> List[dict]:
         try:
             logger.info(f"Processing Facebook Post {post_number}: {url}")
+            # El actor oficial de FB necesita la llave exacta "includeNestedComments"
             run_input = {
                 "startUrls": [{"url": self.clean_url(url)}], 
                 "maxComments": max_comments,
-                "includeReplies": True,
                 "includeNestedComments": True,
                 "viewOption": "RANKED_UNFILTERED"
             }
@@ -305,19 +305,20 @@ class SocialMediaScraper:
             return self._process_facebook_results(items, url, post_number, campaign_info)
         except Exception as e:
             logger.error(f"Error in FB scrape: {e}"); raise
-
+        
     def scrape_instagram_comments(self, url: str, max_comments: int = 500, campaign_info: dict = None, post_number: int = 1) -> List[dict]:
         try:
             logger.info(f"Processing Instagram Post {post_number}: {url}")
+            # CAMBIO CRÍTICO: "apify/instagram-scraper" no extrae replies. 
+            # Cambiamos al actor especializado "apify/instagram-comment-scraper"
             run_input = {
                 "directUrls": [url], 
-                "resultsType": "comments", 
+                "postUrls": [{"url": url}], # Mandamos ambos formatos por compatibilidad
                 "resultsLimit": max_comments,
-                "scrapeReplies": True,
                 "includeReplies": True
             }
             
-            run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
+            run = self.client.actor("apify/instagram-comment-scraper").call(run_input=run_input)
             run_status = self._wait_for_run_finish(run)
             if not run_status or run_status["status"] != "SUCCEEDED": return []
             
@@ -330,19 +331,20 @@ class SocialMediaScraper:
             return self._process_instagram_results(items, url, post_number, campaign_info)
         except Exception as e:
             logger.error(f"Error in IG scrape: {e}"); raise
-
+    
     def scrape_tiktok_comments(self, url: str, max_comments: int = 500, campaign_info: dict = None, post_number: int = 1) -> List[dict]:
         try:
             logger.info(f"Processing TikTok Post {post_number}: {url}")
+            # CAMBIO CRÍTICO: clockworks suele fallar con replies. 
+            # Cambiamos a "futurizerush/tiktok-comment-scraper" que es nativo para replies
             run_input = {
-                "postURLs": [self.clean_url(url)], 
-                "maxCommentsPerPost": max_comments,
-                "scrapeReplies": True,
-                "replies": True,
-                "includeReplies": True
+                "videoUrls": [self.clean_url(url)], 
+                "maxCommentsPerVideo": max_comments,
+                "includeReplies": True,
+                "maxRepliesPerComment": 50
             }
             
-            run = self.client.actor("clockworks/tiktok-comments-scraper").call(run_input=run_input)
+            run = self.client.actor("futurizerush/tiktok-comment-scraper").call(run_input=run_input)
             run_status = self._wait_for_run_finish(run)
             if not run_status or run_status["status"] != "SUCCEEDED": return []
             
@@ -755,3 +757,4 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
