@@ -30,7 +30,7 @@ def run_report_generation():
 
     # Asegurar que exista post_url_original (para archivos antiguos)
     if 'post_url_original' not in df.columns:
-        print("⚠️  Nota: Creando post_url_original desde post_url")
+        print("⚠️ Nota: Creando post_url_original desde post_url")
         df['post_url_original'] = df['post_url'].copy()
 
     # --- Lógica de listado de pautas ---
@@ -87,12 +87,17 @@ def run_report_generation():
     
     print("Análisis completado.")
 
-    # Creamos el JSON para el dashboard
+    # Creamos el JSON para el dashboard asegurando la columna is_reply
+    if 'is_reply' not in df_comments.columns:
+        df_comments['is_reply'] = False
+
     df_for_json = df_comments[[
         'created_time_colombia', 'comment_text', 'sentimiento', 
-        'tema', 'platform', 'post_url', 'post_label'
+        'tema', 'platform', 'post_url', 'post_label', 'is_reply'
     ]].copy()
     
+    df_for_json['is_reply'] = df_for_json['is_reply'].fillna(False).astype(bool)
+
     df_for_json.rename(columns={
         'created_time_colombia': 'date', 
         'comment_text': 'comment', 
@@ -154,6 +159,10 @@ def run_report_generation():
             .comments-controls {{ display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }}
             .filter-btn.active {{ background-color: #007bff; color: white; border-color: #007bff; }}
             @media (max-width: 900px) {{ .charts-grid {{ grid-template-columns: 1fr; }} }}
+            
+            /* Nuevos estilos para los replies */
+            .comment-reply {{ margin-left: 40px; border-left: 3px dashed #ccc; padding-left: 15px; opacity: 0.95; }}
+            .reply-icon {{ font-size: 1.2em; margin-right: 5px; color: #6c757d; }}
         </style>
     </head>
     <body>
@@ -521,12 +530,18 @@ def run_report_generation():
 
                     const sentimentToCss = {{ 'Positivo': 'positive', 'Negativo': 'negative', 'Neutro': 'neutral' }};
                     let listHtml = '';
+                    
+                    // AQUÍ ESTÁ LA LÓGICA INTEGRADA PARA REPLIES
                     paginatedComments.forEach(d => {{
-                        const escapedComment = d.comment.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        const escapedComment = (d.comment || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
                         const formattedDate = new Date(d.date).toLocaleString('es-CO', {{ day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' }});
-                        listHtml += `<div class="comment-item comment-${{sentimentToCss[d.sentiment]}}">
+                        
+                        const isReplyClass = d.is_reply ? 'comment-reply' : '';
+                        const replyIndicator = d.is_reply ? '<span class="reply-icon">↳</span> Respuesta ' : '';
+                        
+                        listHtml += `<div class="comment-item comment-${{sentimentToCss[d.sentiment]}} ${{isReplyClass}}">
                                         <div class="comment-meta">
-                                            <strong>[${{d.sentiment.toUpperCase()}}] (Tema: ${{d.topic}})</strong>
+                                            <strong>${{replyIndicator}}[${{d.sentiment.toUpperCase()}}] (Tema: ${{d.topic}})</strong>
                                             <span class="comment-date">${{formattedDate}}</span>
                                         </div>
                                         <div>${{escapedComment}}</div>
